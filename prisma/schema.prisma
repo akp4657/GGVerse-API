@@ -9,10 +9,83 @@ datasource db {
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model Test_User_Table {
-  id         Int      @id @default(autoincrement())
-  name       String?
+model Discord_Threads {
+  id         Int      @id(map: "Discord_Threads_pkey1") @default(autoincrement())
+  ThreadId   String   @db.VarChar
+  Members    Int[]
+  Open       Boolean  @default(true)
+  Dispute    Boolean  @default(false)
   created_at DateTime @default(now()) @db.Timestamptz(6)
+}
 
-  @@map("Test-User-Table")
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model Lookup_Badge {
+  id          Int      @id @default(autoincrement())
+  Badge       String?  @db.VarChar
+  Description String?
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model Lookup_Game {
+  id            Int             @id(map: "Lookup_Games_pkey") @default(autoincrement())
+  Game          String?
+  API           String?         @db.VarChar
+  created_at    DateTime        @default(now()) @db.Timestamptz(6)
+  Match_History Match_History[]
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model Lookup_PaymentType {
+  id         Int      @id @default(autoincrement())
+  Type       String?
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  Users      Users[]
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model Lookup_Status {
+  id            Int             @id @default(autoincrement())
+  Status        String?
+  created_at    DateTime        @default(now()) @db.Timestamptz(6)
+  Match_History Match_History[]
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model Match_History {
+  id            Int            @id(map: "Discord_Threads_pkey") @default(autoincrement())
+  Game          Int?
+  P1            String?        @db.VarChar
+  P2            String?        @db.VarChar
+  Status        Int?
+  Result        Boolean?
+  created_at    DateTime       @default(now()) @db.Timestamptz(6)
+  Lookup_Game   Lookup_Game?   @relation(fields: [Game], references: [id], onDelete: Cascade)
+  Lookup_Status Lookup_Status? @relation(fields: [Status], references: [id], onDelete: NoAction)
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model Users {
+  id                 Int                @id(map: "Test-User-Table_pkey") @default(autoincrement())
+  Username           String?
+  Rank               Int?
+  Wallet             Decimal            @default(0) @db.Decimal
+  Winrate            Decimal            @default(0) @db.Decimal
+  PaymentType        Int                @default(1)
+  PayerId            String?            @db.VarChar
+  BillingAgreementId String?            @db.VarChar
+  CardLast           Decimal?           @db.Decimal
+  CardBrand          String?            @db.VarChar
+  CardExpMonth       Decimal?           @db.Decimal
+  CardExpYear        Decimal?           @db.Decimal
+  Rivals             Int[]
+  Badges             Int[]
+  Discord            String?            @db.VarChar
+  Avatar             String?            @db.VarChar
+  created_at         DateTime           @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime?          @db.Timestamptz(6)
+  Lookup_PaymentType Lookup_PaymentType @relation(fields: [PaymentType], references: [id], onDelete: SetDefault)
 }
