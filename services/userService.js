@@ -5,17 +5,24 @@ import prisma from '../prisma/prisma.js';
 
 export const registerUser = async(req, res) => {
     let email = req.body.email;
+    let username = req.body.username;
     let password = req.body.password;
 
     if (!email || !password)
         return res.status(400).json({ error: 'Email and password are required.' });
 
     // Check if user already exists
+    let user = await prisma.Users.findUnique({
+        where: {Email: email}
+    })
+    if(user) {
+        return res.status(400).json({error: 'User already exists'})
+    }
 
     try {
         const hashed = await bcrypt.hash(password, 12);
         const userObj = { 
-            Username: email,
+            Username: username || email,
             Email: email,
             Password: hashed,
         };
@@ -86,7 +93,7 @@ export const verifyEmail = async(req, res) => {
             data: { Authenticated: true }
         })
 
-        return res.status(200).send({message: "Email verified successfully", user});
+        return res.status(200).send({message: "Email verified successfully", token: token});
     } catch(err) {
         console.log(err)
         return res.status(500).send({err: "Invalid or expired token"});

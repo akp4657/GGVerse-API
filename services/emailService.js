@@ -16,7 +16,7 @@ export const sendVerificationEmail = async (email, token) => {
         },
     });
 
-    const verificationUrl = `http://localhost:3000/verify-email?token=${token}`;
+    const verificationUrl = `http://localhost:8081/VerifyEmail?token=${token}`;
 
     const mailOptions = {
         from: `"No Reply" <${testAccount.user}>`,  // Use test account email as sender
