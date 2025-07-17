@@ -73,7 +73,6 @@ model Users {
   Username           String?
   Rank               Int?
   Wallet             Decimal            @default(0) @db.Decimal
-  Winrate            Decimal            @default(0) @db.Decimal
   PaymentType        Int                @default(1)
   PayerId            String?            @db.VarChar
   BillingAgreementId String?            @db.VarChar
@@ -88,7 +87,10 @@ model Users {
   Authenticated      Boolean            @default(false)
   Password           String?            @db.VarChar
   Email              String?            @unique @db.VarChar
-  created_at         DateTime?          @default(now()) @db.Timestamptz(6)
+  WinsLosses         Json?              @db.Json
+  Streak             Int?               @default(0)
+  Earnings           Decimal?           @db.Decimal
+  created_at         DateTime           @default(now()) @db.Timestamptz(6)
   updated_at         DateTime?          @db.Timestamptz(6)
   Lookup_PaymentType Lookup_PaymentType @relation(fields: [PaymentType], references: [id], onDelete: SetDefault)
 }
