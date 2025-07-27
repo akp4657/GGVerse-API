@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import { PrismaClient } from '@prisma/client';
 import * as emailService from './services/emailService.js';
 import * as userService from './services/userService.js';
+import * as stripeService from './services/stripeService.js';
 import cors from 'cors';
 dotenv.config();
 const prisma = new PrismaClient();
@@ -30,6 +31,10 @@ app.get('/users', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch users' });
   }
 });
+
+app.post('/add-funds', stripeService.addFunds);
+app.post('/withdraw-funds', stripeService.withdrawFunds);
+app.get('/balance', stripeService.getBalance);
 
 app.listen(PORT, () => {
   console.log(`Server is running on ${PORT}`);
