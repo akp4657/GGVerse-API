@@ -5,6 +5,7 @@ import * as emailService from './services/emailService.js';
 import * as userService from './services/userService.js';
 import * as stripeService from './services/stripeService.js';
 import cors from 'cors';
+import jwt from 'jsonwebtoken';
 dotenv.config();
 const prisma = new PrismaClient();
 
@@ -19,7 +20,15 @@ app.get('/', (req, res) => {
 
 app.post('/register', userService.registerUser);
 app.get('/verify-email', userService.verifyEmail);
-app.get('/login', userService.login);
+app.post('/login', userService.login);
+
+// POST /validate-token
+// Validates if a token is still valid
+app.post('/validate-token', userService.authenticateToken, userService.validateToken);
+
+// POST /logout  
+// Invalidates the current session
+app.post('/logout', userService.authenticateToken, userService.logout);
 
 app.get('/users', async (req, res) => {
   try {
