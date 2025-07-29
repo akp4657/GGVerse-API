@@ -51,7 +51,15 @@ export const validateToken = async (req, res) => {
         id: user.id,
         email: user.Email,
         username: user.Username,
-        authenticated: user.Authenticated
+        wallet: user.Wallet,
+        rank: user.Rank,
+        avatar: user.Avatar,
+        createdAt: user.created_at,
+        updatedAt: user.created_at, // Using created_at since there's no updated_at field
+        authenticated: user.Authenticated,
+        jwt: user.JWT,
+        paypalPayerId: user.PayPalPayerId,
+        stripePayerId: user.StripePayerId
       }
     });
   } catch (error) {
@@ -172,7 +180,16 @@ export const login = async(req, res) => {
             user: {
                 id: user.id,
                 email: user.Email,
-                username: user.Username
+                username: user.Username,
+                wallet: user.Wallet,
+                rank: user.Rank,
+                avatar: user.Avatar,
+                createdAt: user.CreatedAt,
+                updatedAt: user.UpdatedAt,
+                authenticated: user.Authenticated,
+                jwt: user.JWT,
+                paypalPayerId: user.PayPalPayerId,
+                stripePayerId: user.StripePayerId
             }
         });
 
@@ -196,9 +213,145 @@ export const verifyEmail = async(req, res) => {
             data: { Authenticated: true }
         })
 
-        return res.status(200).send({message: "Email verified successfully", token: token});
+        return res.status(200).send({
+          message: "Email verified successfully", 
+          token: token, 
+          user: {
+            id: user.id,
+            email: user.Email,
+            username: user.Username,
+            wallet: user.Wallet,
+            rank: user.Rank,
+            avatar: user.Avatar,
+            createdAt: user.created_at,
+            updatedAt: user.created_at, // Using created_at since there's no updated_at field
+            authenticated: user.Authenticated,
+            jwt: user.JWT,
+            paypalPayerId: user.PayPalPayerId,
+            stripePayerId: user.StripePayerId
+          }});
     } catch(err) {
         console.log(err)
         return res.status(500).send({err: "Invalid or expired token"});
     }
 }
+
+export const getCurrentUser = async (req, res) => {
+  try {
+    // The user data is already available from the authenticateToken middleware
+    const user = req.user;
+    
+    if (!user) {
+      return res.status(401).json({ message: 'User not authenticated' });
+    }
+
+    // Get full user data from database
+    const userData = await prisma.Users.findUnique({
+      where: { id: user.userId },
+      select: {
+        id: true,
+        Username: true,
+        Email: true,
+        Wallet: true,
+        Rank: true,
+        Discord: true,
+        Avatar: true,
+        Authenticated: true,
+        Streak: true,
+        Earnings: true,
+        WinsLosses: true,
+        Badges: true,
+        Rivals: true,
+        PaymentType: true,
+        created_at: true
+      }
+    });
+
+    if (!userData) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    res.json({
+      user: {
+        ...userData,
+        Wallet: userData.Wallet,
+        Earnings: userData.Earnings ? userData.Earnings : 0,
+        created_at: userData.created_at.toISOString()
+      }
+    });
+  } catch (err) {
+    console.error('Error fetching user profile:', err);
+    res.status(500).json({ message: 'Failed to fetch user profile' });
+  }
+};
+
+export const updateUserProfile = async (req, res) => {
+  try {
+    const user = req.user;
+    
+    if (!user) {
+      return res.status(401).json({ message: 'User not authenticated' });
+    }
+
+    const { Username, Discord, Avatar } = req.body;
+
+    // Validate input
+    const updateData = {};
+    
+    if (Username !== undefined) {
+      if (typeof Username !== 'string' || Username.trim().length === 0) {
+        return res.status(400).json({ message: 'Username must be a non-empty string' });
+      }
+      updateData.Username = Username.trim();
+    }
+
+    if (Discord !== undefined) {
+      if (typeof Discord !== 'string') {
+        return res.status(400).json({ message: 'Discord must be a string' });
+      }
+      updateData.Discord = Discord.trim() || null;
+    }
+
+    if (Avatar !== undefined) {
+      if (typeof Avatar !== 'string') {
+        return res.status(400).json({ message: 'Avatar must be a string' });
+      }
+      updateData.Avatar = Avatar.trim() || null;
+    }
+
+    // Update user profile
+    const updatedUser = await prisma.Users.update({
+      where: { id: user.userId },
+      data: updateData,
+      select: {
+        id: true,
+        Username: true,
+        Email: true,
+        Wallet: true,
+        Rank: true,
+        Discord: true,
+        Avatar: true,
+        Authenticated: true,
+        Streak: true,
+        Earnings: true,
+        WinsLosses: true,
+        Badges: true,
+        Rivals: true,
+        PaymentType: true,
+        created_at: true
+      }
+    });
+
+    res.json({
+      user: {
+        ...updatedUser,
+        Wallet: updatedUser.Wallet,
+        Earnings: updatedUser.Earnings ? updatedUser.Earnings : 0,
+        created_at: updatedUser.created_at.toISOString()
+      }
+    });
+  } catch (err) {
+    console.error('Error updating user profile:', err);
+    res.status(500).json({ message: 'Failed to update user profile' });
+  }
+};

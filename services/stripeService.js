@@ -24,7 +24,7 @@ export const reconcileBalances = async (req, res) => {
     const totalUserWalletCents = totalUserWallet.times(100).toNumber();
 
     res.json({
-      totalUserWallet: totalUserWallet.toString(),
+      totalUserWallet: totalUserWallet,
       totalUserWalletCents,
       stripeAvailable,
       difference: stripeAvailable - totalUserWalletCents,
@@ -42,6 +42,25 @@ export const reconcileBalances = async (req, res) => {
 export const addFunds = async (req, res) => {
   const { amount, currency, paymentMethodId, userId } = req.body;
   try {
+    // Validate required fields
+    if (!amount || !currency || !paymentMethodId || !userId) {
+      return res.status(400).json({ error: 'Missing required fields: amount, currency, paymentMethodId, userId' });
+    }
+
+    // Validate amount
+    if (amount <= 0) {
+      return res.status(400).json({ error: 'Amount must be greater than 0' });
+    }
+
+    // Check if user exists
+    const user = await prisma.users.findUnique({
+      where: { id: parseInt(userId) }
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
     const paymentIntent = await stripe.paymentIntents.create({
       amount: amount * 100,
       currency,
@@ -56,7 +75,27 @@ export const addFunds = async (req, res) => {
       data: { Wallet: { increment: amount } },
     });
 
-    res.json({ success: true, paymentIntent });
+    // Record transaction
+    await prisma.transaction.create({
+      data: {
+        UserId: parseInt(userId),
+        Type: 'deposit',
+        Amount: new Decimal(amount),
+        Currency: currency.toUpperCase(),
+        Description: `Deposit via ${paymentMethodId}`,
+        StripePaymentIntentId: paymentIntent.id,
+        Status: 'completed'
+      }
+    });
+
+    console.log(Number(user.Wallet) + Number(amount));
+    console.log(typeof user.Wallet);
+    console.log(typeof amount);
+    res.json({ 
+      success: true, 
+      paymentIntent,
+      newBalance: Number(user.Wallet) + Number(amount)
+    });
   } catch (err) {
     console.log(err);
     res.status(400).json({ error: err.message });
@@ -66,8 +105,18 @@ export const addFunds = async (req, res) => {
 export const withdrawFunds = async (req, res) => {
   const { amount, currency, userId } = req.body;
   try {
+    // Validate required fields
+    if (!amount || !currency || !userId) {
+      return res.status(400).json({ error: 'Missing required fields: amount, currency, userId' });
+    }
+
+    // Validate amount
+    if (amount <= 0) {
+      return res.status(400).json({ error: 'Amount must be greater than 0' });
+    }
+
     // 1. Check user balance
-    const user = await prisma.users.findUnique({ where: { id: userId } });
+    const user = await prisma.users.findUnique({ where: { id: parseInt(userId) } });
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     if (user.Wallet < amount) {
@@ -87,7 +136,24 @@ export const withdrawFunds = async (req, res) => {
       data: { Wallet: { decrement: amount } },
     });
 
-    res.json({ success: true, payout });
+    // Record transaction
+    await prisma.transaction.create({
+      data: {
+        UserId: parseInt(userId),
+        Type: 'withdrawal',
+        Amount: new Decimal(amount),
+        Currency: currency.toUpperCase(),
+        Description: `Withdrawal to bank account`,
+        StripePayoutId: payout.id,
+        Status: 'completed'
+      }
+    });
+
+    res.json({ 
+      success: true, 
+      payout,
+      newBalance: Number(user.Wallet) - Number(amount)
+    });
   } catch (err) {
     console.log(err);
     res.status(400).json({ error: err.message });

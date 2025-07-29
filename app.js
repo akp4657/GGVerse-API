@@ -4,6 +4,7 @@ import { PrismaClient } from '@prisma/client';
 import * as emailService from './services/emailService.js';
 import * as userService from './services/userService.js';
 import * as stripeService from './services/stripeService.js';
+import * as walletService from './services/walletService.js';
 import cors from 'cors';
 import jwt from 'jsonwebtoken';
 dotenv.config();
@@ -30,6 +31,10 @@ app.post('/validate-token', userService.authenticateToken, userService.validateT
 // Invalidates the current session
 app.post('/logout', userService.authenticateToken, userService.logout);
 
+// User profile endpoints
+app.get('/user/profile', userService.authenticateToken, userService.getCurrentUser);
+app.put('/user/profile', userService.authenticateToken, userService.updateUserProfile);
+
 app.get('/users', async (req, res) => {
   try {
     console.log('Called')
@@ -41,9 +46,14 @@ app.get('/users', async (req, res) => {
   }
 });
 
+// Stripe endpoints
 app.post('/add-funds', stripeService.addFunds);
 app.post('/withdraw-funds', stripeService.withdrawFunds);
 app.get('/balance', stripeService.getBalance);
+
+// Wallet endpoints
+app.get('/wallet/balance/:userId', walletService.getWalletBalance);
+app.get('/wallet/transactions/:userId', walletService.getTransactionHistory);
 
 app.listen(PORT, () => {
   console.log(`Server is running on ${PORT}`);
