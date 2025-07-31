@@ -35,7 +35,7 @@ export const reconcileBalances = async (req, res) => {
     });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: err.message });
+    res.status(500).send({ error: err.message });
   }
 };
 
@@ -44,12 +44,12 @@ export const addFunds = async (req, res) => {
   try {
     // Validate required fields
     if (!amount || !currency || !paymentMethodId || !userId) {
-      return res.status(400).json({ error: 'Missing required fields: amount, currency, paymentMethodId, userId' });
+      return res.status(400).send({ error: 'Missing required fields: amount, currency, paymentMethodId, userId' });
     }
 
     // Validate amount
     if (amount <= 0) {
-      return res.status(400).json({ error: 'Amount must be greater than 0' });
+      return res.status(400).send({ error: 'Amount must be greater than 0' });
     }
 
     // Check if user exists
@@ -58,7 +58,7 @@ export const addFunds = async (req, res) => {
     });
 
     if (!user) {
-      return res.status(404).json({ error: 'User not found' });
+      return res.status(404).send({ error: 'User not found' });
     }
 
     const paymentIntent = await stripe.paymentIntents.create({
@@ -98,7 +98,7 @@ export const addFunds = async (req, res) => {
     });
   } catch (err) {
     console.log(err);
-    res.status(400).json({ error: err.message });
+    res.status(400).send({ error: err.message });
   }
 };
 
@@ -107,20 +107,20 @@ export const withdrawFunds = async (req, res) => {
   try {
     // Validate required fields
     if (!amount || !currency || !userId) {
-      return res.status(400).json({ error: 'Missing required fields: amount, currency, userId' });
+      return res.status(400).send({ error: 'Missing required fields: amount, currency, userId' });
     }
 
     // Validate amount
     if (amount <= 0) {
-      return res.status(400).json({ error: 'Amount must be greater than 0' });
+      return res.status(400).send({ error: 'Amount must be greater than 0' });
     }
 
     // 1. Check user balance
     const user = await prisma.users.findUnique({ where: { id: parseInt(userId) } });
-    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (!user) return res.status(404).send({ error: 'User not found' });
 
     if (user.Wallet < amount) {
-      return res.status(400).json({ error: 'Insufficient balance' });
+      return res.status(400).send({ error: 'Insufficient balance' });
     }
 
     // 2. Initiate payout
@@ -156,7 +156,7 @@ export const withdrawFunds = async (req, res) => {
     });
   } catch (err) {
     console.log(err);
-    res.status(400).json({ error: err.message });
+    res.status(400).send({ error: err.message });
   }
 };
 

@@ -34,17 +34,7 @@ app.post('/logout', userService.authenticateToken, userService.logout);
 // User profile endpoints
 app.get('/user/profile', userService.authenticateToken, userService.getCurrentUser);
 app.put('/user/profile', userService.authenticateToken, userService.updateUserProfile);
-
-app.get('/users', async (req, res) => {
-  try {
-    console.log('Called')
-    const users = await prisma.Users.findMany(); // Model name matches Prisma schema
-    res.status(200).send(users)
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to fetch users' });
-  }
-});
+app.get('/users', userService.getUsers);
 
 // Stripe endpoints
 app.post('/add-funds', stripeService.addFunds);

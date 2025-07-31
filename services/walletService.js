@@ -10,7 +10,7 @@ export const getWalletBalance = async (req, res) => {
     
     // Validate userId
     if (!userId || isNaN(parseInt(userId))) {
-      return res.status(400).json({ error: 'Valid userId is required' });
+      return res.status(400).send({ error: 'Valid userId is required' });
     }
 
     const user = await prisma.users.findUnique({
@@ -24,7 +24,7 @@ export const getWalletBalance = async (req, res) => {
     });
 
     if (!user) {
-      return res.status(404).json({ error: 'User not found' });
+      return res.status(404).send({ error: 'User not found' });
     }
 
     res.json({
@@ -36,7 +36,7 @@ export const getWalletBalance = async (req, res) => {
     });
   } catch (err) {
     console.error('Error getting wallet balance:', err);
-    res.status(500).json({ error: 'Failed to get wallet balance' });
+    res.status(500).send({ error: 'Failed to get wallet balance' });
   }
 };
 
@@ -48,7 +48,7 @@ export const getTransactionHistory = async (req, res) => {
     
     // Validate userId
     if (!userId || isNaN(parseInt(userId))) {
-      return res.status(400).json({ error: 'Valid userId is required' });
+      return res.status(400).send({ error: 'Valid userId is required' });
     }
 
     // Validate pagination parameters
@@ -56,7 +56,7 @@ export const getTransactionHistory = async (req, res) => {
     const limitNum = parseInt(limit);
     
     if (pageNum < 1 || limitNum < 1 || limitNum > 100) {
-      return res.status(400).json({ error: 'Invalid pagination parameters' });
+      return res.status(400).send({ error: 'Invalid pagination parameters' });
     }
 
     // Check if user exists
@@ -66,7 +66,7 @@ export const getTransactionHistory = async (req, res) => {
     });
 
     if (!user) {
-      return res.status(404).json({ error: 'User not found' });
+      return res.status(404).send({ error: 'User not found' });
     }
 
     // Build where clause
@@ -108,7 +108,7 @@ export const getTransactionHistory = async (req, res) => {
     const hasNextPage = pageNum < totalPages;
     const hasPrevPage = pageNum > 1;
 
-    res.json({
+    res.status(200).send({
       userId: user.id,
       username: user.Username,
       transactions: transactions.map(t => ({
@@ -133,6 +133,6 @@ export const getTransactionHistory = async (req, res) => {
     });
   } catch (err) {
     console.error('Error getting transaction history:', err);
-    res.status(500).json({ error: 'Failed to get transaction history' });
+    res.status(500).send({ error: 'Failed to get transaction history' });
   }
 }; 

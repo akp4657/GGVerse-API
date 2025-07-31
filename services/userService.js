@@ -12,17 +12,17 @@ export const authenticateToken = (req, res, next) => {
   const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
 
   if (!token) {
-    return res.status(401).json({ error: 'Access token required' });
+    return res.status(401).send({ error: 'Access token required' });
   }
 
   // Check if token is blacklisted
   if (tokenBlacklist.has(token)) {
-    return res.status(401).json({ error: 'Token has been invalidated' });
+    return res.status(401).send({ error: 'Token has been invalidated' });
   }
 
   jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
     if (err) {
-      return res.status(403).json({ error: 'Invalid or expired token' });
+      return res.status(403).send({ error: 'Invalid or expired token' });
     }
     req.user = user;
     next();
@@ -38,11 +38,11 @@ export const validateToken = async (req, res) => {
     });
 
     if (!user) {
-      return res.status(401).json({ error: 'User not found' });
+      return res.status(401).send({ error: 'User not found' });
     }
 
     if (!user.Authenticated) {
-      return res.status(401).json({ error: 'Email not verified' });
+      return res.status(401).send({ error: 'Email not verified' });
     }
 
     res.json({ 
@@ -64,7 +64,7 @@ export const validateToken = async (req, res) => {
     });
   } catch (error) {
     console.error('Token validation error:', error);
-    res.status(500).json({ error: 'Token validation failed' });
+    res.status(500).send({ error: 'Token validation failed' });
   }
 };
 
@@ -82,13 +82,13 @@ export const logout = async (req, res) => {
     // Clear JWT field in database
     await prisma.Users.update({
       where: { id: req.user.userId || req.user.id },
-      data: { JWT: null }
+      data: { JWT: null, Online: false }
     });
     
-    res.json({ success: true, message: 'Logged out successfully' });
+    res.status(200).send({ success: true, message: 'Logged out successfully' });
   } catch (error) {
     console.error('Logout error:', error);
-    res.status(500).json({ error: 'Logout failed' });
+    res.status(500).send({ error: 'Logout failed' });
   }
 };
 
@@ -98,14 +98,14 @@ export const registerUser = async(req, res) => {
     let password = req.body.password;
 
     if (!email || !password)
-        return res.status(400).json({ error: 'Email and password are required.' });
+        return res.status(400).send({ error: 'Email and password are required.' });
 
     // Check if user already exists
     let user = await prisma.Users.findUnique({
         where: {Email: email}
     })
     if(user) {
-        return res.status(400).json({error: 'User already exists'})
+        return res.status(400).send({error: 'User already exists'})
     }
 
     try {
@@ -136,7 +136,7 @@ export const login = async(req, res) => {
     const password = req.body.password;
 
     if(!email || !password) {
-        return res.status(400).json({message: 'Email and password are required'});
+        return res.status(400).send({message: 'Email and password are required'});
     }
 
     try{
@@ -168,7 +168,7 @@ export const login = async(req, res) => {
         // Store JWT in database
         await prisma.Users.update({
             where: { id: user.id },
-            data: { JWT: token }
+            data: { JWT: token, Online: true }
         });
 
         console.log(user)
@@ -203,14 +203,14 @@ export const verifyEmail = async(req, res) => {
     const token = req.query.token;
 
     if(!token) {
-        return res.status(500).json({message: 'Missing verification token'});
+        return res.status(500).send({message: 'Missing verification token'});
     }
 
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         let user = await prisma.Users.update({
             where: {id: decoded.id},
-            data: { Authenticated: true }
+            data: { Authenticated: true, Online: true }
         })
 
         return res.status(200).send({
@@ -268,10 +268,10 @@ export const getCurrentUser = async (req, res) => {
     });
 
     if (!userData) {
-      return res.status(404).json({ message: 'User not found' });
+      return res.status(404).send({ message: 'User not found' });
     }
 
-    res.json({
+    res.status(200).send({
       user: {
         ...userData,
         Wallet: userData.Wallet,
@@ -281,16 +281,40 @@ export const getCurrentUser = async (req, res) => {
     });
   } catch (err) {
     console.error('Error fetching user profile:', err);
-    res.status(500).json({ message: 'Failed to fetch user profile' });
+    res.status(500).send({ message: 'Failed to fetch user profile' });
   }
 };
+
+
+export const getUsers = async (req, res) => {
+  try {
+    // Only return id, online, active, and winnings
+    const users = await prisma.Users.findMany({
+      select: {
+        id: true,
+        Rank: true,
+        Avatar: true,
+        Username: true,
+        WinsLosses: true,
+        Online: true,
+        Active: true,
+        Earnings: true
+      }
+    });
+
+    res.status(200).send(users);
+  } catch (err) {
+    console.error('Error fetching users:', err);
+    res.status(500).send({ message: 'Failed to fetch users' });
+  }
+}
 
 export const updateUserProfile = async (req, res) => {
   try {
     const user = req.user;
     
     if (!user) {
-      return res.status(401).json({ message: 'User not authenticated' });
+      return res.status(401).send({ message: 'User not authenticated' });
     }
 
     const { Username, Discord, Avatar } = req.body;
@@ -300,21 +324,21 @@ export const updateUserProfile = async (req, res) => {
     
     if (Username !== undefined) {
       if (typeof Username !== 'string' || Username.trim().length === 0) {
-        return res.status(400).json({ message: 'Username must be a non-empty string' });
+        return res.status(400).send({ message: 'Username must be a non-empty string' });
       }
       updateData.Username = Username.trim();
     }
 
     if (Discord !== undefined) {
       if (typeof Discord !== 'string') {
-        return res.status(400).json({ message: 'Discord must be a string' });
+        return res.status(400).send({ message: 'Discord must be a string' });
       }
       updateData.Discord = Discord.trim() || null;
     }
 
     if (Avatar !== undefined) {
       if (typeof Avatar !== 'string') {
-        return res.status(400).json({ message: 'Avatar must be a string' });
+        return res.status(400).send({ message: 'Avatar must be a string' });
       }
       updateData.Avatar = Avatar.trim() || null;
     }
@@ -342,7 +366,7 @@ export const updateUserProfile = async (req, res) => {
       }
     });
 
-    res.json({
+    res.status(200).send({
       user: {
         ...updatedUser,
         Wallet: updatedUser.Wallet,
@@ -352,6 +376,6 @@ export const updateUserProfile = async (req, res) => {
     });
   } catch (err) {
     console.error('Error updating user profile:', err);
-    res.status(500).json({ message: 'Failed to update user profile' });
+    res.status(500).send({ message: 'Failed to update user profile' });
   }
 };

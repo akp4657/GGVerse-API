@@ -72,7 +72,7 @@ model Users {
   id                 Int                @id(map: "Test-User-Table_pkey") @default(autoincrement())
   Username           String?
   Rank               Int?
-  Wallet             Decimal            @default(0) @db.Decimal
+  Wallet             Int
   PaymentType        Int                @default(1)
   PayPalPayerId      String?            @db.VarChar
   BillingAgreementId String?            @db.VarChar
@@ -89,24 +89,26 @@ model Users {
   Email              String?            @unique @db.VarChar
   WinsLosses         Json?              @db.Json
   Streak             Int?               @default(0)
-  Earnings           Decimal?           @db.Decimal
+  Earnings           Int?
   JWT                String?            @db.VarChar
   StripePayerId      String?            @db.VarChar
-  Lookup_PaymentType Lookup_PaymentType @relation(fields: [PaymentType], references: [id], onDelete: SetDefault)
+  Active             Boolean?           @default(true)
+  Online             Boolean?           @default(false)
   Transactions       Transaction[]
+  Lookup_PaymentType Lookup_PaymentType @relation(fields: [PaymentType], references: [id], onDelete: SetDefault)
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model Transaction {
   id                    Int      @id @default(autoincrement())
   UserId                Int
-  Type                  String   @db.VarChar // 'deposit', 'withdrawal', 'transfer', 'game_payout', etc.
+  Type                  String   @db.VarChar
   Amount                Decimal  @db.Decimal
   Currency              String   @default("USD") @db.VarChar
   Description           String?  @db.VarChar
   StripePaymentIntentId String?  @db.VarChar
   StripePayoutId        String?  @db.VarChar
-  Status                String   @default("completed") @db.VarChar // 'pending', 'completed', 'failed'
+  Status                String   @default("completed") @db.VarChar
   created_at            DateTime @default(now()) @db.Timestamptz(6)
   Users                 Users    @relation(fields: [UserId], references: [id], onDelete: Cascade)
 }
