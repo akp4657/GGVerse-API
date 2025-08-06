@@ -114,6 +114,7 @@ export const registerUser = async(req, res) => {
             Username: username || email,
             Email: email,
             Password: hashed,
+            Wallet: 0
         };
 
         const newUser = await prisma.Users.create({data: userObj})

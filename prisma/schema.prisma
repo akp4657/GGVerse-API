@@ -55,47 +55,55 @@ model Lookup_Status {
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model Match_History {
-  id            Int            @id(map: "Discord_Threads_pkey") @default(autoincrement())
-  Game          Int?
-  P1            String?        @db.VarChar
-  P2            String?        @db.VarChar
-  Status        Int?
-  Result        Boolean?
-  created_at    DateTime       @default(now()) @db.Timestamptz(6)
-  Lookup_Game   Lookup_Game?   @relation(fields: [Game], references: [id], onDelete: Cascade)
-  Lookup_Status Lookup_Status? @relation(fields: [Status], references: [id], onDelete: NoAction)
+  id                            Int            @id(map: "Discord_Threads_pkey") @default(autoincrement())
+  Game                          Int?
+  P1                            Int?
+  P2                            Int?
+  Status                        Int?
+  Result                        Boolean?       // TRUE - P1 wins | FALSE - P2 wins
+  created_at                    DateTime       @default(now()) @db.Timestamptz(6)
+  PointDiff                     Int?
+  RivalryHeat                   Float?         @default(0)
+  BetAmount                     Decimal?       @db.Decimal
+  Lookup_Game                   Lookup_Game?   @relation(fields: [Game], references: [id], onDelete: Cascade)
+  Users_Match_History_P1ToUsers Users?         @relation("Match_History_P1ToUsers", fields: [P1], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  Users_Match_History_P2ToUsers Users?         @relation("Match_History_P2ToUsers", fields: [P2], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  Lookup_Status                 Lookup_Status? @relation(fields: [Status], references: [id], onDelete: NoAction)
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model Users {
-  id                 Int                @id(map: "Test-User-Table_pkey") @default(autoincrement())
-  Username           String?
-  Rank               Int?
-  Wallet             Int
-  PaymentType        Int                @default(1)
-  PayPalPayerId      String?            @db.VarChar
-  BillingAgreementId String?            @db.VarChar
-  CardLast           Decimal?           @db.Decimal
-  CardBrand          String?            @db.VarChar
-  CardExpMonth       Decimal?           @db.Decimal
-  CardExpYear        Decimal?           @db.Decimal
-  Rivals             Int[]
-  Badges             Int[]
-  Discord            String?            @db.VarChar
-  Avatar             String?            @db.VarChar
-  Authenticated      Boolean            @default(false)
-  Password           String?            @db.VarChar
-  Email              String?            @unique @db.VarChar
-  WinsLosses         Json?              @db.Json
-  Streak             Int?               @default(0)
-  Earnings           Int?
-  JWT                String?            @db.VarChar
-  StripePayerId      String?            @db.VarChar
-  Active             Boolean?           @default(true)
-  Online             Boolean?           @default(false)
-  Transactions       Transaction[]
-  Lookup_PaymentType Lookup_PaymentType @relation(fields: [PaymentType], references: [id], onDelete: SetDefault)
+  id                                    Int                @id(map: "Test-User-Table_pkey") @default(autoincrement())
+  Username                              String?
+  Rank                                  Int?
+  Wallet                                Int
+  PaymentType                           Int                @default(1)
+  PayPalPayerId                         String?            @db.VarChar
+  BillingAgreementId                    String?            @db.VarChar
+  CardLast                              Decimal?           @db.Decimal
+  CardBrand                             String?            @db.VarChar
+  CardExpMonth                          Decimal?           @db.Decimal
+  CardExpYear                           Decimal?           @db.Decimal
+  Rivals                                Int[]
+  Badges                                Int[]
+  Discord                               String?            @db.VarChar
+  Avatar                                String?            @db.VarChar
+  Authenticated                         Boolean            @default(false)
+  Password                              String?            @db.VarChar
+  Email                                 String?            @unique @db.VarChar
+  WinsLosses                            Json?              @db.Json
+  Streak                                Int?               @default(0)
+  Earnings                              Int?
+  JWT                                   String?            @db.VarChar
+  Active                                Boolean?           @default(true)
+  MMI                                   Float?             @default(1000)
+  LastMMIUpdate                         DateTime?
+  Online                                Boolean?           @default(false)
+  Match_History_Match_History_P1ToUsers Match_History[]    @relation("Match_History_P1ToUsers")
+  Match_History_Match_History_P2ToUsers Match_History[]    @relation("Match_History_P2ToUsers")
+  Transactions                          Transaction[]
+  Lookup_PaymentType                    Lookup_PaymentType @relation(fields: [PaymentType], references: [id], onDelete: SetDefault)
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.

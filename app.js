@@ -5,6 +5,7 @@ import * as emailService from './services/emailService.js';
 import * as userService from './services/userService.js';
 import * as stripeService from './services/stripeService.js';
 import * as walletService from './services/walletService.js';
+import * as matchmakingController from './controllers/matchmakingController.js';
 import cors from 'cors';
 import jwt from 'jsonwebtoken';
 dotenv.config();
@@ -44,6 +45,14 @@ app.get('/balance', stripeService.getBalance);
 // Wallet endpoints
 app.get('/wallet/balance/:userId', walletService.getWalletBalance);
 app.get('/wallet/transactions/:userId', walletService.getTransactionHistory);
+
+// Matchmaking endpoints
+app.get('/matchmaking/suggestions/:userId', matchmakingController.getMatchSuggestions);
+app.get('/matchmaking/player-data/:userId', matchmakingController.getPlayerData);
+app.post('/matchmaking/update-mmi/:userId', matchmakingController.updatePlayerMMI);
+app.get('/matchmaking/rivalries/:userId', matchmakingController.getPlayerRivalries);
+app.get('/matchmaking/stats/:userId', matchmakingController.getMatchmakingStats);
+app.get('/matchmaking/opponents/:userId', matchmakingController.getPotentialOpponents);
 
 app.listen(PORT, () => {
   console.log(`Server is running on ${PORT}`);
