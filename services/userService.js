@@ -57,6 +57,7 @@ export const validateToken = async (req, res) => {
         createdAt: user.created_at,
         updatedAt: user.created_at, // Using created_at since there's no updated_at field
         authenticated: user.Authenticated,
+        badges: user.Badges,
         jwt: user.JWT,
         paypalPayerId: user.PayPalPayerId,
         stripePayerId: user.StripePayerId
@@ -188,6 +189,7 @@ export const login = async(req, res) => {
                 createdAt: user.CreatedAt,
                 updatedAt: user.UpdatedAt,
                 authenticated: user.Authenticated,
+                badges: user.Badges,
                 jwt: user.JWT,
                 paypalPayerId: user.PayPalPayerId,
                 stripePayerId: user.StripePayerId
@@ -227,6 +229,7 @@ export const verifyEmail = async(req, res) => {
             createdAt: user.created_at,
             updatedAt: user.created_at, // Using created_at since there's no updated_at field
             authenticated: user.Authenticated,
+            badges: user.Badges,
             jwt: user.JWT,
             paypalPayerId: user.PayPalPayerId,
             stripePayerId: user.StripePayerId
@@ -372,6 +375,7 @@ export const updateUserProfile = async (req, res) => {
         ...updatedUser,
         Wallet: updatedUser.Wallet,
         Earnings: updatedUser.Earnings ? updatedUser.Earnings : 0,
+        Badges: updatedUser.Badges,
         created_at: updatedUser.created_at.toISOString()
       }
     });

@@ -6,6 +6,7 @@ import * as userService from './services/userService.js';
 import * as stripeService from './services/stripeService.js';
 import * as walletService from './services/walletService.js';
 import * as matchmakingController from './controllers/matchmakingController.js';
+import * as badgeController from './controllers/badgeController.js';
 import cors from 'cors';
 import jwt from 'jsonwebtoken';
 dotenv.config();
@@ -53,6 +54,14 @@ app.post('/matchmaking/update-mmi/:userId', matchmakingController.updatePlayerMM
 app.get('/matchmaking/rivalries/:userId', matchmakingController.getPlayerRivalries);
 app.get('/matchmaking/stats/:userId', matchmakingController.getMatchmakingStats);
 app.get('/matchmaking/opponents/:userId', matchmakingController.getPotentialOpponents);
+
+// Badge endpoints
+app.post('/badges', badgeController.createBadge);
+app.get('/badges', badgeController.getAllBadges);
+app.get('/badges/:id', badgeController.getBadgeById);
+app.put('/badges/:id', badgeController.updateBadge);
+app.delete('/badges/:id', badgeController.deleteBadge);
+app.post('/badges/earn', badgeController.earnBadge);
 
 app.listen(PORT, () => {
   console.log(`Server is running on ${PORT}`);
