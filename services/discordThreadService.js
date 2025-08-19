@@ -1,0 +1,215 @@
+import { PrismaClient } from '@prisma/client';
+import * as challengeService from './challengeService.js';
+
+const prisma = new PrismaClient();
+
+/**
+ * Create a Discord thread for an accepted challenge
+ * This endpoint will be called by your Discord bot when both players accept a challenge
+ */
+export const createDiscordThread = async (req, res) => {
+  try {
+    const { challengeId, threadId, threadUrl } = req.body;
+
+    // Validate required fields
+    if (!challengeId || !threadId || !threadUrl) {
+      return res.status(400).json({ 
+        error: 'Missing required fields: challengeId, threadId, threadUrl' 
+      });
+    }
+
+    // Find the challenge
+    const challenge = await prisma.challenges.findUnique({
+      where: { id: parseInt(challengeId) },
+      include: {
+        challenger: true,
+        challenged: true
+      }
+    });
+
+    if (!challenge) {
+      return res.status(404).json({ error: 'Challenge not found' });
+    }
+
+    // Verify the challenge is accepted
+    if (challenge.status !== 'accepted') {
+      return res.status(400).json({ 
+        error: 'Cannot create Discord thread for non-accepted challenge' 
+      });
+    }
+
+    // Update the challenge with Discord thread information
+    const updatedChallenge = await challengeService.updateChallengeWithDiscordThread(
+      parseInt(challengeId),
+      threadId,
+      threadUrl
+    );
+
+    // Create a Discord thread record in the existing Discord_Threads table
+    const discordThread = await prisma.discord_Threads.create({
+      data: {
+        ThreadId: threadId,
+        Members: [challenge.challengerId, challenge.challengedId],
+        Open: true,
+        Dispute: false
+      }
+    });
+
+    res.status(201).send({
+      message: 'Discord thread created successfully',
+      success: true,
+      challenge: updatedChallenge,
+      discordThread
+    });
+
+  } catch (error) {
+    console.error('Error creating Discord thread:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+/**
+ * Get Discord thread information for a challenge
+ */
+export const getDiscordThreadInfo = async (req, res) => {
+  try {
+    const { challengeId } = req.params;
+
+    const challenge = await prisma.challenges.findUnique({
+      where: { id: parseInt(challengeId) },
+      select: {
+        id: true,
+        discordThreadId: true,
+        discordThreadUrl: true,
+        status: true,
+        challenger: {
+          select: {
+            id: true,
+            Username: true,
+            Discord: true
+          }
+        },
+        challenged: {
+          select: {
+            id: true,
+            Username: true,
+            Discord: true
+          }
+        }
+      }
+    });
+
+    if (!challenge) {
+      return res.status(404).json({ error: 'Challenge not found' });
+    }
+
+    if (!challenge.discordThreadId) {
+      return res.status(404).json({ error: 'No Discord thread found for this challenge' });
+    }
+
+    res.status(200).send({
+      message: 'Discord thread info fetched successfully',
+      success: true,
+      challenge
+    });
+
+  } catch (error) {
+    console.error('Error fetching Discord thread info:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+/**
+ * Close a Discord thread (mark as closed)
+ */
+export const closeDiscordThread = async (req, res) => {
+  try {
+    const { challengeId } = req.params;
+    const { userId } = req.body;
+
+    const challenge = await prisma.challenges.findUnique({
+      where: { id: parseInt(challengeId) },
+      include: {
+        challenger: true,
+        challenged: true
+      }
+    });
+
+    if (!challenge) {
+      return res.status(404).json({ error: 'Challenge not found' });
+    }
+
+    // Verify the user is part of the challenge
+    if (challenge.challengerId !== parseInt(userId) && challenge.challengedId !== parseInt(userId)) {
+      return res.status(403).json({ error: 'Not authorized to close this thread' });
+    }
+
+    if (!challenge.discordThreadId) {
+      return res.status(404).json({ error: 'No Discord thread found for this challenge' });
+    }
+
+    // Update the Discord thread to closed
+    await prisma.discord_Threads.updateMany({
+      where: { ThreadId: challenge.discordThreadId },
+      data: { Open: false }
+    });
+
+    res.status(200).send({
+      message: 'Discord thread closed successfully',
+      success: true
+    });
+
+  } catch (error) {
+    console.error('Error closing Discord thread:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+/**
+ * Get all Discord threads for a user
+ */
+export const getUserDiscordThreads = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    // Get all challenges for the user that have Discord threads
+    const challenges = await prisma.challenges.findMany({
+      where: {
+        OR: [
+          { challengerId: parseInt(userId) },
+          { challengedId: parseInt(userId) }
+        ],
+        discordThreadId: { not: null }
+      },
+      include: {
+        challenger: {
+          select: {
+            id: true,
+            Username: true,
+            Avatar: true
+          }
+        },
+        challenged: {
+          select: {
+            id: true,
+            Username: true,
+            Avatar: true
+          }
+        }
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
+
+    res.status(200).send({
+      message: 'User Discord threads fetched successfully',
+      success: true,
+      challenges
+    });
+
+  } catch (error) {
+    console.error('Error fetching user Discord threads:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};

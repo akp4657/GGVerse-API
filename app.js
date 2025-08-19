@@ -7,6 +7,8 @@ import * as stripeService from './services/stripeService.js';
 import * as walletService from './services/walletService.js';
 import * as matchmakingController from './controllers/matchmakingController.js';
 import * as badgeController from './controllers/badgeController.js';
+import * as challengeService from './services/challengeService.js';
+import * as discordThreadService from './services/discordThreadService.js';
 import cors from 'cors';
 import jwt from 'jsonwebtoken';
 dotenv.config();
@@ -37,6 +39,7 @@ app.post('/logout', userService.authenticateToken, userService.logout);
 app.get('/user/profile', userService.authenticateToken, userService.getCurrentUser);
 app.put('/user/profile', userService.authenticateToken, userService.updateUserProfile);
 app.get('/users', userService.getUsers);
+app.get('/users/:id', userService.getUserById);
 
 // Stripe endpoints
 app.post('/add-funds', stripeService.addFunds);
@@ -62,6 +65,20 @@ app.get('/badges/:id', badgeController.getBadgeById);
 app.put('/badges/:id', badgeController.updateBadge);
 app.delete('/badges/:id', badgeController.deleteBadge);
 app.post('/badges/earn', badgeController.earnBadge);
+
+// Challenge endpoints
+app.post('/challenges', challengeService.createChallenge);
+app.get('/challenges/user/:userId', challengeService.getUserChallenges);
+app.get('/challenges/:challengeId', challengeService.getChallengeById);
+app.post('/challenges/:challengeId/accept', challengeService.acceptChallenge);
+app.post('/challenges/:challengeId/decline', challengeService.declineChallenge);
+app.delete('/challenges/:challengeId', challengeService.cancelChallenge);
+
+// Discord thread endpoints
+app.post('/api/ggthread', discordThreadService.createDiscordThread);
+app.get('/api/ggthread/:challengeId', discordThreadService.getDiscordThreadInfo);
+app.put('/api/ggthread/:challengeId/close', discordThreadService.closeDiscordThread);
+app.get('/api/ggthread/user/:userId', discordThreadService.getUserDiscordThreads);
 
 app.listen(PORT, () => {
   console.log(`Server is running on ${PORT}`);

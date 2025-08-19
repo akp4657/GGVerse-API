@@ -173,8 +173,6 @@ export const login = async(req, res) => {
             data: { JWT: token, Online: true }
         });
 
-        console.log(user)
-
         return res.status(200).send({ 
             message: 'Login successful', 
             token, 
@@ -310,6 +308,39 @@ export const getUsers = async (req, res) => {
   } catch (err) {
     console.error('Error fetching users:', err);
     res.status(500).send({ message: 'Failed to fetch users' });
+  }
+}
+
+export const getUserById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const user = await prisma.Users.findUnique({
+      where: { id: parseInt(id) },
+      select: {
+        id: true,
+        Username: true,
+        Rank: true,
+        Discord: true,
+        Avatar: true,
+        MMI: true,
+        Online: true,
+        Active: true
+      }
+    });
+
+    if (!user) {
+      return res.status(404).send({ message: 'User not found' });
+    }
+
+    res.status(200).send({
+      message: 'User fetched successfully',
+      success: true,
+      user
+    });
+  } catch (err) {
+    console.error('Error fetching user by ID:', err);
+    res.status(500).send({ message: 'Failed to fetch user' });
   }
 }
 

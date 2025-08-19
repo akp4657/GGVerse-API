@@ -105,6 +105,9 @@ model Users {
   Match_History_Match_History_P2ToUsers Match_History[]    @relation("Match_History_P2ToUsers")
   Transactions                          Transaction[]
   Lookup_PaymentType                    Lookup_PaymentType @relation(fields: [PaymentType], references: [id], onDelete: SetDefault)
+  // Challenge relations
+  ChallengesAsChallenger                Challenges[]       @relation("Challenges_Challenger")
+  ChallengesAsChallenged                Challenges[]       @relation("Challenges_Challenged")
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -120,4 +123,22 @@ model Transaction {
   Status                String   @default("completed") @db.VarChar
   created_at            DateTime @default(now()) @db.Timestamptz(6)
   Users                 Users    @relation(fields: [UserId], references: [id], onDelete: Cascade)
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model Challenges {
+  id                Int      @id @default(autoincrement())
+  challengerId      Int
+  challengedId      Int
+  game              String   @db.VarChar
+  wager             Decimal  @db.Decimal
+  status            String   @default("pending") @db.VarChar // pending, accepted, declined, expired
+  createdAt         DateTime @default(now()) @db.Timestamptz(6)
+  expiresAt         DateTime @db.Timestamptz(6)
+  discordThreadId   String?  @db.VarChar
+  discordThreadUrl  String?  @db.VarChar
+  
+  // Relations
+  challenger        Users    @relation("Challenges_Challenger", fields: [challengerId], references: [id], onDelete: Cascade)
+  challenged        Users    @relation("Challenges_Challenged", fields: [challengedId], references: [id], onDelete: Cascade)
 }
