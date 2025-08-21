@@ -34,14 +34,14 @@ export const createChallenge = async (req, res) => {
       where: {
         OR: [
           {
-            challengerId: challengerId,
-            challengedId: challengedId,
-            status: 'pending'
+            ChallengerId: challengerId,
+            ChallengedId: challengedId,
+            Status: 'pending'
           },
           {
-            challengerId: challengedId,
-            challengedId: challengerId,
-            status: 'pending'
+            ChallengerId: challengedId,
+            ChallengedId: challengerId,
+            Status: 'pending'
           }
         ]
       }
@@ -59,15 +59,15 @@ export const createChallenge = async (req, res) => {
 
     const challenge = await prisma.challenges.create({
       data: {
-        challengerId,
-        challengedId,
-        game,
-        wager: parseFloat(wager),
-        expiresAt,
-        status: 'pending'
+        ChallengerId: challengerId,
+        ChallengedId: challengedId,
+        Game: game,
+        Wager: parseFloat(wager),
+        ExpiresAt: expiresAt,
+        Status: 'pending'
       },
       include: {
-        challenger: {
+        Challenger: {
           select: {
             id: true,
             Username: true,
@@ -75,7 +75,7 @@ export const createChallenge = async (req, res) => {
             MMI: true
           }
         },
-        challenged: {
+        Challenged: {
           select: {
             id: true,
             Username: true,
@@ -108,20 +108,20 @@ export const getUserChallenges = async (req, res) => {
 
     let whereClause = {
       OR: [
-        { challengerId: parseInt(userId) },
-        { challengedId: parseInt(userId) }
+        { ChallengerId: parseInt(userId) },
+        { ChallengedId: parseInt(userId) }
       ]
     };
 
     // Filter by status if provided
     if (status && ['pending', 'accepted', 'declined', 'expired'].includes(status)) {
-      whereClause.status = status;
+      whereClause.Status = status;
     }
 
     const challenges = await prisma.challenges.findMany({
-      where: whereClause,
+      where: whereClause, 
       include: {
-        challenger: {
+        Challenger: {
           select: {
             id: true,
             Username: true,
@@ -129,7 +129,7 @@ export const getUserChallenges = async (req, res) => {
             MMI: true
           }
         },
-        challenged: {
+        Challenged: {
           select: {
             id: true,
             Username: true,
@@ -139,7 +139,7 @@ export const getUserChallenges = async (req, res) => {
         }
       },
       orderBy: {
-        createdAt: 'desc'
+        CreatedAt: 'desc'
       }
     });
 
@@ -168,8 +168,8 @@ export const acceptChallenge = async (req, res) => {
     const challenge = await prisma.challenges.findUnique({
       where: { id: parseInt(challengeId) },
       include: {
-        challenger: true,
-        challenged: true
+        Challenger: true,
+        Challenged: true
       }
     });
 
@@ -178,19 +178,19 @@ export const acceptChallenge = async (req, res) => {
     }
 
     // Verify the user is the challenged player
-    if (challenge.challengedId !== parseInt(userId)) {
+    if (challenge.ChallengedId !== parseInt(userId)) {
       return res.status(403).json({ error: 'Only the challenged player can accept this challenge' });
     }
 
-    if (challenge.status !== 'pending') {
+    if (challenge.Status !== 'pending') {
       return res.status(400).json({ error: 'Challenge is not pending' });
     }
 
     // Check if challenge has expired
-    if (new Date() > challenge.expiresAt) {
+    if (new Date() > challenge.ExpiresAt) {
       await prisma.challenges.update({
         where: { id: parseInt(challengeId) },
-        data: { status: 'expired' }
+        data: { Status: 'expired' }
       });
       return res.status(400).json({ error: 'Challenge has expired' });
     }
@@ -198,9 +198,9 @@ export const acceptChallenge = async (req, res) => {
     // Update challenge status to accepted
     const updatedChallenge = await prisma.challenges.update({
       where: { id: parseInt(challengeId) },
-      data: { status: 'accepted' },
+      data: { Status: 'accepted' },
       include: {
-        challenger: {
+        Challenger: {
           select: {
             id: true,
             Username: true,
@@ -208,7 +208,7 @@ export const acceptChallenge = async (req, res) => {
             MMI: true
           }
         },
-        challenged: {
+        Challenged: {
           select: {
             id: true,
             Username: true,
@@ -248,20 +248,20 @@ export const declineChallenge = async (req, res) => {
     }
 
     // Verify the user is the challenged player
-    if (challenge.challengedId !== parseInt(userId)) {
+    if (challenge.ChallengedId !== parseInt(userId)) {
       return res.status(403).json({ error: 'Only the challenged player can decline this challenge' });
     }
 
-    if (challenge.status !== 'pending') {
+    if (challenge.Status !== 'pending') {
       return res.status(400).json({ error: 'Challenge is not pending' });
     }
 
     // Update challenge status to declined
     const updatedChallenge = await prisma.challenges.update({
       where: { id: parseInt(challengeId) },
-      data: { status: 'declined' },
+      data: { Status: 'declined' },
       include: {
-        challenger: {
+        Challenger: {
           select: {
             id: true,
             Username: true,
@@ -269,7 +269,7 @@ export const declineChallenge = async (req, res) => {
             MMI: true
           }
         },
-        challenged: {
+        Challenged: {
           select: {
             id: true,
             Username: true,
@@ -300,8 +300,8 @@ export const updateChallengeWithDiscordThread = async (challengeId, threadId, th
     const updatedChallenge = await prisma.challenges.update({
       where: { id: challengeId },
       data: {
-        discordThreadId: threadId,
-        discordThreadUrl: threadUrl
+        DiscordThreadId: threadId,
+        DiscordThreadUrl: threadUrl
       }
     });
 
@@ -322,7 +322,7 @@ export const getChallengeById = async (req, res) => {
     const challenge = await prisma.challenges.findUnique({
       where: { id: parseInt(challengeId) },
       include: {
-        challenger: {
+        Challenger: {
           select: {
             id: true,
             Username: true,
@@ -330,7 +330,7 @@ export const getChallengeById = async (req, res) => {
             MMI: true
           }
         },
-        challenged: {
+        Challenged: {
           select: {
             id: true,
             Username: true,
@@ -374,11 +374,11 @@ export const cancelChallenge = async (req, res) => {
     }
 
     // Verify the user is the challenger
-    if (challenge.challengerId !== parseInt(userId)) {
+    if (challenge.ChallengerId !== parseInt(userId)) {
       return res.status(403).json({ error: 'Only the challenger can cancel this challenge' });
     }
 
-    if (challenge.status !== 'pending') {
+    if (challenge.Status !== 'pending') {
       return res.status(400).json({ error: 'Challenge is not pending' });
     }
 
