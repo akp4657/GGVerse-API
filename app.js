@@ -9,6 +9,7 @@ import * as matchmakingController from './controllers/matchmakingController.js';
 import * as badgeController from './controllers/badgeController.js';
 import * as challengeService from './services/challengeService.js';
 import * as discordThreadService from './services/discordThreadService.js';
+import * as discordService from './services/discordService.js';
 import cors from 'cors';
 import jwt from 'jsonwebtoken';
 dotenv.config();
@@ -79,6 +80,12 @@ app.post('/api/ggthread', discordThreadService.createDiscordThread);
 app.get('/api/ggthread/:challengeId', discordThreadService.getDiscordThreadInfo);
 app.put('/api/ggthread/:challengeId/close', discordThreadService.closeDiscordThread);
 app.get('/api/ggthread/user/:userId', discordThreadService.getUserDiscordThreads);
+
+// Discord integration endpoints
+app.get('/api/user/discord/oauth-url', userService.authenticateToken, discordService.getOAuthUrl);
+app.get('/api/user/discord/oauth/callback', discordService.handleOAuthCallback);
+app.get('/api/user/discord/status', userService.authenticateToken, discordService.getDiscordStatus);
+app.delete('/api/user/discord/unlink', userService.authenticateToken, discordService.unlinkDiscordAccount);
 
 app.listen(PORT, () => {
   console.log(`Server is running on ${PORT}`);

@@ -54,8 +54,8 @@ export const validateToken = async (req, res) => {
         wallet: user.Wallet,
         rank: user.Rank,
         avatar: user.Avatar,
-        createdAt: user.created_at,
-        updatedAt: user.created_at, // Using created_at since there's no updated_at field
+        // createdAt: user.created_at,
+        // updatedAt: user.created_at, // Using created_at since there's no updated_at field
         authenticated: user.Authenticated,
         badges: user.Badges,
         jwt: user.JWT,
@@ -224,8 +224,8 @@ export const verifyEmail = async(req, res) => {
             wallet: user.Wallet,
             rank: user.Rank,
             avatar: user.Avatar,
-            createdAt: user.created_at,
-            updatedAt: user.created_at, // Using created_at since there's no updated_at field
+            //createdAt: user.created_at,
+            //updatedAt: user.created_at, // Using created_at since there's no updated_at field
             authenticated: user.Authenticated,
             badges: user.Badges,
             jwt: user.JWT,
@@ -258,6 +258,7 @@ export const getCurrentUser = async (req, res) => {
         Rank: true,
         Discord: true,
         Avatar: true,
+        Gamertag: true,
         Authenticated: true,
         Streak: true,
         Earnings: true,
@@ -265,7 +266,7 @@ export const getCurrentUser = async (req, res) => {
         Badges: true,
         Rivals: true,
         PaymentType: true,
-        created_at: true
+        //created_at: true
       }
     });
 
@@ -278,7 +279,7 @@ export const getCurrentUser = async (req, res) => {
         ...userData,
         Wallet: userData.Wallet,
         Earnings: userData.Earnings ? userData.Earnings : 0,
-        created_at: userData.created_at.toISOString()
+        //created_at: userData.created_at.toISOString()
       }
     });
   } catch (err) {
@@ -297,6 +298,7 @@ export const getUsers = async (req, res) => {
         Rank: true,
         Avatar: true,
         Username: true,
+        Gamertag: true,
         WinsLosses: true,
         Online: true,
         Active: true,
@@ -323,6 +325,7 @@ export const getUserById = async (req, res) => {
         Rank: true,
         Discord: true,
         Avatar: true,
+        Gamertag: true,
         MMI: true,
         Online: true,
         Active: true
@@ -352,7 +355,7 @@ export const updateUserProfile = async (req, res) => {
       return res.status(401).send({ message: 'User not authenticated' });
     }
 
-    const { Username, Discord, Avatar } = req.body;
+    const { Username, Discord, Avatar, Gamertag } = req.body;
 
     // Validate input
     const updateData = {};
@@ -361,21 +364,78 @@ export const updateUserProfile = async (req, res) => {
       if (typeof Username !== 'string' || Username.trim().length === 0) {
         return res.status(400).send({ message: 'Username must be a non-empty string' });
       }
+      // Username validation: alphanumeric + underscores, 3-20 characters
+      const usernameRegex = /^[a-zA-Z0-9_]{3,20}$/;
+      if (!usernameRegex.test(Username.trim())) {
+        return res.status(400).send({ 
+          message: 'Username must be 3-20 characters long and contain only letters, numbers, and underscores' 
+        });
+      }
       updateData.Username = Username.trim();
+    }
+
+    if (Gamertag !== undefined) {
+      if (typeof Gamertag !== 'string') {
+        return res.status(400).send({ message: 'Gamertag must be a string' });
+      }
+      // Gamertag validation: allow letters, numbers, spaces, hyphens, underscores, 2-20 characters
+      const gamertagRegex = /^[a-zA-Z0-9\s\-_]{2,20}$/;
+      if (Gamertag.trim() && !gamertagRegex.test(Gamertag.trim())) {
+        return res.status(400).send({ 
+          message: 'Gamertag must be 2-20 characters long and contain only letters, numbers, spaces, hyphens, and underscores' 
+        });
+      }
+      updateData.Gamertag = Gamertag.trim() || null;
     }
 
     if (Discord !== undefined) {
       if (typeof Discord !== 'string') {
         return res.status(400).send({ message: 'Discord must be a string' });
       }
-      updateData.Discord = Discord.trim() || null;
+      
+      // Basic Discord ID format validation
+      if (Discord.trim()) {
+        const discordIdRegex = /^\d{17,19}$/;
+        if (!discordIdRegex.test(Discord.trim())) {
+          return res.status(400).send({
+            message: 'Discord ID must be a valid 17-19 digit number' 
+          });
+        }
+        updateData.Discord = Discord.trim();
+      } else {
+        updateData.Discord = null;
+      }
     }
 
     if (Avatar !== undefined) {
       if (typeof Avatar !== 'string') {
         return res.status(400).send({ message: 'Avatar must be a string' });
       }
-      updateData.Avatar = Avatar.trim() || null;
+      // Basic URL validation for avatar
+      if (Avatar.trim()) {
+        try {
+          new URL(Avatar.trim());
+          updateData.Avatar = Avatar.trim();
+        } catch (error) {
+          return res.status(400).send({ message: 'Avatar must be a valid URL' });
+        }
+      } else {
+        updateData.Avatar = null;
+      }
+    }
+
+    // Check if username is already taken by another user
+    if (updateData.Username) {
+      const existingUser = await prisma.Users.findFirst({
+        where: {
+          Username: updateData.Username,
+          id: { not: user.userId }
+        }
+      });
+      
+      if (existingUser) {
+        return res.status(400).send({ message: 'Username is already taken' });
+      }
     }
 
     // Update user profile
@@ -390,6 +450,7 @@ export const updateUserProfile = async (req, res) => {
         Rank: true,
         Discord: true,
         Avatar: true,
+        Gamertag: true,
         Authenticated: true,
         Streak: true,
         Earnings: true,
@@ -397,17 +458,16 @@ export const updateUserProfile = async (req, res) => {
         Badges: true,
         Rivals: true,
         PaymentType: true,
-        created_at: true
       }
     });
 
     res.status(200).send({
+      message: 'Profile updated successfully',
       user: {
         ...updatedUser,
         Wallet: updatedUser.Wallet,
         Earnings: updatedUser.Earnings ? updatedUser.Earnings : 0,
-        Badges: updatedUser.Badges,
-        created_at: updatedUser.created_at.toISOString()
+        Badges: updatedUser.Badges
       }
     });
   } catch (err) {
