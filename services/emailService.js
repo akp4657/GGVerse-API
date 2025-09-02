@@ -1,36 +1,84 @@
 import nodemailer from 'nodemailer';
-//require('dotenv').config();
 
-export const sendVerificationEmail = async (email, token) => {
-    try {
-    // Create a fresh test account on every call
-    const testAccount = await nodemailer.createTestAccount();
+// Simple SendGrid configuration
+const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY;
+const FROM_EMAIL = process.env.EMAIL_FROM || 'noreply@ggverse.com';
+const FROM_NAME = process.env.EMAIL_FROM_NAME || 'GGVerse';
+const BASE_URL = process.env.BASE_URL || 'http://localhost:8081';
 
-    const transporter = nodemailer.createTransport({
-        host: testAccount.smtp.host,
-        port: testAccount.smtp.port,
-        secure: testAccount.smtp.secure,
-        auth: {
-        user: testAccount.user,
-        pass: testAccount.pass,
-        },
-    });
+// Create SendGrid transporter
+const createTransporter = () => {
+  if (!SENDGRID_API_KEY) {
+    throw new Error('SENDGRID_API_KEY environment variable is required');
+  }
 
-    const verificationUrl = `http://localhost:8081/VerifyEmail?token=${token}`;
+  return nodemailer.createTransport({
+    host: 'smtp.sendgrid.net',
+    port: 587,
+    secure: false,
+    auth: {
+      user: 'apikey',
+      pass: SENDGRID_API_KEY,
+    },
+  });
+};
 
+// Simple email template
+const createVerificationEmail = (verificationUrl, username = 'User') => ({
+  subject: 'Verify Your Email - GGVerse',
+  html: `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+      <h2 style="color: #333;">Welcome to GGVerse!</h2>
+      <p>Hi ${username},</p>
+      <p>Thank you for signing up! Please verify your email address by clicking the link below:</p>
+      <p style="margin: 30px 0;">
+        <a href="${verificationUrl}" 
+           style="background: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block;">
+          Verify Email Address
+        </a>
+      </p>
+      <p>If the button doesn't work, copy and paste this link into your browser:</p>
+      <p style="word-break: break-all; color: #666;">${verificationUrl}</p>
+      <p style="color: #666; font-size: 14px; margin-top: 30px;">
+        This link will expire in 24 hours.<br>
+        If you didn't create an account, you can ignore this email.
+      </p>
+    </div>
+  `,
+  text: `Hi ${username},\n\nThank you for signing up for GGVerse! Please verify your email address by visiting this link:\n\n${verificationUrl}\n\nThis link will expire in 24 hours.\n\nIf you didn't create an account, you can ignore this email.`
+});
+
+// Main email sending function
+const sendEmail = async (to, subject, html, text) => {
+  try {
+    const transporter = createTransporter();
+    
     const mailOptions = {
-        from: `"No Reply" <${testAccount.user}>`,  // Use test account email as sender
-        to: email,
-        subject: 'Verify your email',
-        html: `<p>Click the link to verify your email:</p><a href="${verificationUrl}">${verificationUrl}</a>`,
+      from: `"${FROM_NAME}" <${FROM_EMAIL}>`,
+      to: to,
+      subject: subject,
+      html: html,
+      text: text,
     };
 
     const info = await transporter.sendMail(mailOptions);
+    console.log(`Email sent successfully to ${to}:`, info.messageId);
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error('Error sending email:', error);
+    throw new Error(`Failed to send email: ${error.message}`);
+  }
+};
 
-    console.log('Mail sent');
-    console.log('Preview URL:', nodemailer.getTestMessageUrl(info));  // <-- IMPORTANT! Check this URL to view the email
-
-    } catch (err) {
-    console.error('Error sending mail:', err);
-    }
+// Public function for verification emails
+export const sendVerificationEmail = async (email, token, username = null) => {
+  const verificationUrl = `${BASE_URL}/VerifyEmail?token=${token}`;
+  const emailTemplate = createVerificationEmail(verificationUrl, username);
+  
+  return await sendEmail(
+    email, 
+    emailTemplate.subject, 
+    emailTemplate.html, 
+    emailTemplate.text
+  );
 };

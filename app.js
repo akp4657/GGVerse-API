@@ -87,6 +87,16 @@ app.get('/api/user/discord/oauth/callback', discordService.handleOAuthCallback);
 app.get('/api/user/discord/status', userService.authenticateToken, discordService.getDiscordStatus);
 app.delete('/api/user/discord/unlink', userService.authenticateToken, discordService.unlinkDiscordAccount);
 
+// Email test endpoint (for development/testing)
+app.get('/api/test/email', async (req, res) => {
+  try {
+    const result = await emailService.testEmailConfiguration();
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Server is running on ${PORT}`);
 });
