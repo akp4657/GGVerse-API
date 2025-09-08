@@ -9,6 +9,7 @@ export const createChallenge = async (req, res) => {
   try {
     const { challengerId, challengedId, game, wager } = req.body;
 
+    console.log(req.body)
     // Validate required fields
     if (!challengerId || !challengedId || !game || !wager) {
       return res.status(400).json({ 

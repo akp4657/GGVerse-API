@@ -475,3 +475,152 @@ export const updateUserProfile = async (req, res) => {
     res.status(500).send({ message: 'Failed to update user profile' });
   }
 };
+
+// Add a rival to user's rivals list
+export const addRival = async (req, res) => {
+  try {
+    const { rivalId } = req.body;
+    const userId = req.user.userId || req.user.id;
+
+    // Validate rivalId
+    if (!rivalId || isNaN(parseInt(rivalId))) {
+      return res.status(400).send({ message: 'Valid rival ID is required' });
+    }
+
+    const rivalIdInt = parseInt(rivalId);
+
+    // Check if user is trying to add themselves as rival
+    if (userId === rivalIdInt) {
+      return res.status(400).send({ message: 'Cannot add yourself as a rival' });
+    }
+
+    // Check if rival user exists
+    const rivalUser = await prisma.Users.findUnique({
+      where: { id: rivalIdInt }
+    });
+
+    if (!rivalUser) {
+      return res.status(404).send({ message: 'Rival user not found' });
+    }
+
+    // Get current user data
+    const currentUser = await prisma.Users.findUnique({
+      where: { id: userId },
+      select: { Rivals: true }
+    });
+
+    if (!currentUser) {
+      return res.status(404).send({ message: 'User not found' });
+    }
+
+    // Check if rival is already in the list
+    if (currentUser.Rivals.includes(rivalIdInt)) {
+      return res.status(409).send({ message: 'User is already a rival' });
+    }
+
+    // Add rival to the array
+    const updatedRivals = [...currentUser.Rivals, rivalIdInt];
+
+    await prisma.Users.update({
+      where: { id: userId },
+      data: { Rivals: updatedRivals }
+    });
+
+    res.status(200).send({ 
+      message: 'Rival added successfully',
+      rivals: updatedRivals
+    });
+  } catch (err) {
+    console.error('Error adding rival:', err);
+    res.status(500).send({ message: 'Failed to add rival' });
+  }
+};
+
+// Remove a rival from user's rivals list
+export const removeRival = async (req, res) => {
+  try {
+    const { rivalId } = req.params;
+    const userId = req.user.userId || req.user.id;
+
+    // Validate rivalId
+    if (!rivalId || isNaN(parseInt(rivalId))) {
+      return res.status(400).send({ message: 'Valid rival ID is required' });
+    }
+
+    const rivalIdInt = parseInt(rivalId);
+
+    // Get current user data
+    const currentUser = await prisma.Users.findUnique({
+      where: { id: userId },
+      select: { Rivals: true }
+    });
+
+    if (!currentUser) {
+      return res.status(404).send({ message: 'User not found' });
+    }
+
+    // Check if rival is in the list
+    if (!currentUser.Rivals.includes(rivalIdInt)) {
+      return res.status(404).send({ message: 'User is not a rival' });
+    }
+
+    // Remove rival from the array
+    const updatedRivals = currentUser.Rivals.filter(id => id !== rivalIdInt);
+
+    await prisma.Users.update({
+      where: { id: userId },
+      data: { Rivals: updatedRivals }
+    });
+
+    res.status(200).send({ 
+      message: 'Rival removed successfully',
+      rivals: updatedRivals
+    });
+  } catch (err) {
+    console.error('Error removing rival:', err);
+    res.status(500).send({ message: 'Failed to remove rival' });
+  }
+};
+
+// Get user's rivals with details
+export const getRivals = async (req, res) => {
+  try {
+    const userId = req.user.userId
+
+    // Get user with rivals
+    const user = await prisma.Users.findUnique({
+      where: { id: userId },
+      select: { Rivals: true }
+    });
+
+    if (!user) {
+      return res.status(404).send({ message: 'User not found' });
+    }
+
+    // If no rivals, return empty array
+    if (user.Rivals.length === 0) {
+      return res.status(200).send({ rivals: [] });
+    }
+
+    // Get rival details
+    const rivals = await prisma.Users.findMany({
+      where: {
+        id: { in: user.Rivals }
+      },
+      select: {
+        id: true,
+        Username: true,
+        Avatar: true,
+        Rank: true,
+        Gamertag: true,
+        Online: true,
+        Active: true
+      }
+    });
+
+    res.status(200).send(rivals);
+  } catch (err) {
+    console.error('Error getting rivals:', err);
+    res.status(500).send({ message: 'Failed to get rivals' });
+  }
+};

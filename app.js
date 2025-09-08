@@ -42,6 +42,11 @@ app.put('/user/profile', userService.authenticateToken, userService.updateUserPr
 app.get('/users', userService.getUsers);
 app.get('/users/:id', userService.getUserById);
 
+// Rival management endpoints
+app.post('/user/rivals', userService.authenticateToken, userService.addRival);
+app.delete('/user/rivals/:rivalId', userService.authenticateToken, userService.removeRival);
+app.get('/user/rivals', userService.authenticateToken, userService.getRivals);
+
 // Stripe endpoints
 app.post('/add-funds', stripeService.addFunds);
 app.post('/withdraw-funds', stripeService.withdrawFunds);
