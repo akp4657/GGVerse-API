@@ -624,3 +624,164 @@ export const getRivals = async (req, res) => {
     res.status(500).send({ message: 'Failed to get rivals' });
   }
 };
+
+// Add a game to user's games list
+export const addGame = async (req, res) => {
+  try {
+    const { gameId } = req.body;
+    const userId = req.user.userId;
+
+    // Validate gameId
+    if (!gameId || isNaN(parseInt(gameId))) {
+      return res.status(400).send({ message: 'Valid game ID is required' });
+    }
+
+    const gameIdInt = parseInt(gameId);
+
+    // Check if game exists in lookup table
+    const game = await prisma.Lookup_Game.findUnique({
+      where: { id: gameIdInt }
+    });
+
+    if (!game) {
+      return res.status(404).send({ message: 'Game not found' });
+    }
+
+    // Get current user data
+    const currentUser = await prisma.Users.findUnique({
+      where: { id: userId },
+      select: { Games: true }
+    });
+
+    if (!currentUser) {
+      return res.status(404).send({ message: 'User not found' });
+    }
+
+    // Check if game is already in the list
+    if (currentUser.Games.includes(gameIdInt)) {
+      return res.status(409).send({ message: 'Game is already in your list' });
+    }
+
+    // Add game to the array
+    const updatedGames = [...currentUser.Games, gameIdInt];
+
+    await prisma.Users.update({
+      where: { id: userId },
+      data: { Games: updatedGames }
+    });
+
+    res.status(200).send({ 
+      message: 'Game added successfully',
+      games: updatedGames
+    });
+  } catch (err) {
+    console.error('Error adding game:', err);
+    res.status(500).send({ message: 'Failed to add game' });
+  }
+};
+
+// Remove a game from user's games list
+export const removeGame = async (req, res) => {
+  try {
+    const { gameId } = req.params;
+    const userId = req.user.userId;
+
+    // Validate gameId
+    if (!gameId || isNaN(parseInt(gameId))) {
+      return res.status(400).send({ message: 'Valid game ID is required' });
+    }
+
+    const gameIdInt = parseInt(gameId);
+
+    // Get current user data
+    const currentUser = await prisma.Users.findUnique({
+      where: { id: userId },
+      select: { Games: true }
+    });
+
+    if (!currentUser) {
+      return res.status(404).send({ message: 'User not found' });
+    }
+
+    // Check if game is in the list
+    if (!currentUser.Games.includes(gameIdInt)) {
+      return res.status(404).send({ message: 'Game is not in your list' });
+    }
+
+    // Remove game from the array
+    const updatedGames = currentUser.Games.filter(id => id !== gameIdInt);
+
+    await prisma.Users.update({
+      where: { id: userId },
+      data: { Games: updatedGames }
+    });
+
+    res.status(200).send({ 
+      message: 'Game removed successfully',
+      games: updatedGames
+    });
+  } catch (err) {
+    console.error('Error removing game:', err);
+    res.status(500).send({ message: 'Failed to remove game' });
+  }
+};
+
+// Get user's games with details
+export const getGames = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    // Get user with games
+    const user = await prisma.Users.findUnique({
+      where: { id: userId },
+      select: { Games: true }
+    });
+
+    if (!user) {
+      return res.status(404).send({ message: 'User not found' });
+    }
+
+    // If no games, return empty array
+    if (user.Games.length === 0) {
+      return res.status(200).send([]);
+    }
+
+    // Get game details from lookup table
+    const games = await prisma.Lookup_Game.findMany({
+      where: {
+        id: { in: user.Games }
+      },
+      select: {
+        id: true,
+        Game: true,
+        API: true
+      }
+    });
+
+    res.status(200).send(games);
+  } catch (err) {
+    console.error('Error getting games:', err);
+    res.status(500).send({ message: 'Failed to get games' });
+  }
+};
+
+// Get all available games from lookup table
+export const getAllAvailableGames = async (req, res) => {
+  try {
+    const games = await prisma.Lookup_Game.findMany({
+      select: {
+        id: true,
+        Game: true,
+        API: true
+      },
+      orderBy: {
+        Game: 'asc'
+      }
+    });
+
+    res.status(200).send(games);
+  } catch (err) {
+    console.error('Error getting available games:', err);
+    res.status(500).send({ message: 'Failed to get available games' });
+  }
+};

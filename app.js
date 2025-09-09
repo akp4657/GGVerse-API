@@ -47,6 +47,12 @@ app.post('/user/rivals', userService.authenticateToken, userService.addRival);
 app.delete('/user/rivals/:rivalId', userService.authenticateToken, userService.removeRival);
 app.get('/user/rivals', userService.authenticateToken, userService.getRivals);
 
+// Game management endpoints
+app.post('/user/games', userService.authenticateToken, userService.addGame);
+app.delete('/user/games/:gameId', userService.authenticateToken, userService.removeGame);
+app.get('/user/games', userService.authenticateToken, userService.getGames);
+app.get('/games', userService.getAllAvailableGames);
+
 // Stripe endpoints
 app.post('/add-funds', stripeService.addFunds);
 app.post('/withdraw-funds', stripeService.withdrawFunds);

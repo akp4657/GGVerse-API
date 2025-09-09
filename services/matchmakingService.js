@@ -9,7 +9,7 @@ export class MatchmakingService {
   static BETTING_MATCHES = 20; // Betting matches for profile calculation
 
   // Core data collection
-  async getPlayerData(playerId) {
+  async getPlayerData(playerId, gameId = null) {
     const user = await prisma.users.findUnique({
       where: { id: playerId }
     });
@@ -18,28 +18,35 @@ export class MatchmakingService {
       throw new Error('Player not found');
     }
 
-    // Calculate skill profile
-    const skillProfile = await this.calculateSkillProfile(playerId);
+    // Calculate skill profile (game-specific if gameId provided)
+    const skillProfile = await this.calculateSkillProfile(playerId, gameId);
     
-    // Calculate betting profile
-    const bettingProfile = await this.calculateBettingProfile(playerId);
+    // Calculate betting profile (game-specific if gameId provided)
+    const bettingProfile = await this.calculateBettingProfile(playerId, gameId);
     
-    // Calculate rivalry profile
-    const rivalryProfile = await this.calculateRivalryProfile(playerId);
+    // Calculate rivalry profile (game-specific if gameId provided)
+    const rivalryProfile = await this.calculateRivalryProfile(playerId, gameId);
 
     return { skillProfile, bettingProfile, rivalryProfile };
   }
 
   // Calculate skill profile from match history
-  async calculateSkillProfile(playerId) {
+  async calculateSkillProfile(playerId, gameId = null) {
+    const whereClause = {
+      OR: [
+        { P1: playerId },
+        { P2: playerId }
+      ],
+      Status: 2 // Completed matches
+    };
+
+    // Add game filter if gameId is provided
+    if (gameId) {
+      whereClause.Game = gameId;
+    }
+
     const recentMatches = await prisma.match_History.findMany({
-      where: {
-        OR: [
-          { P1: playerId },
-          { P2: playerId }
-        ],
-        Status: 2 // Completed matches
-      },
+      where: whereClause,
       orderBy: { created_at: 'desc' },
       take: MatchmakingService.RECENT_MATCHES
     });
@@ -70,16 +77,23 @@ export class MatchmakingService {
   }
 
   // Calculate betting profile from match history
-  async calculateBettingProfile(playerId) {
+  async calculateBettingProfile(playerId, gameId = null) {
+    const whereClause = {
+      OR: [
+        { P1: playerId },
+        { P2: playerId }
+      ],
+      BetAmount: { not: null },
+      Status: 2
+    };
+
+    // Add game filter if gameId is provided
+    if (gameId) {
+      whereClause.Game = gameId;
+    }
+
     const bettingMatches = await prisma.match_History.findMany({
-      where: {
-        OR: [
-          { P1: playerId },
-          { P2: playerId }
-        ],
-        BetAmount: { not: null },
-        Status: 2
-      },
+      where: whereClause,
       orderBy: { created_at: 'desc' },
       take: MatchmakingService.BETTING_MATCHES
     });
@@ -125,15 +139,22 @@ export class MatchmakingService {
   }
 
   // Calculate rivalry profile
-  async calculateRivalryProfile(playerId) {
+  async calculateRivalryProfile(playerId, gameId = null) {
+    const whereClause = {
+      OR: [
+        { P1: playerId },
+        { P2: playerId }
+      ],
+      Status: 2
+    };
+
+    // Add game filter if gameId is provided
+    if (gameId) {
+      whereClause.Game = gameId;
+    }
+
     const allMatches = await prisma.match_History.findMany({
-      where: {
-        OR: [
-          { P1: playerId },
-          { P2: playerId }
-        ],
-        Status: 2
-      },
+      where: whereClause,
       orderBy: { created_at: 'desc' },
       take: MatchmakingService.MATCH_LIMIT
     });
@@ -246,13 +267,16 @@ export class MatchmakingService {
   }
 
   // Calculate MMI scores for potential opponents
-  async calculateMMIScores(playerId, potentialOpponents) {
-    const playerData = await this.getPlayerData(playerId);
+  async calculateMMIScores(playerId, potentialOpponents, gameId = null) {
+    const playerData = await this.getPlayerData(playerId, gameId);
     const MMIResults = [];
 
     for (const opponentId of potentialOpponents) {
       try {
-        const opponentData = await this.getPlayerData(parseInt(opponentId));
+        const opponentData = await this.getPlayerData(parseInt(opponentId), gameId);
+        
+        // Game Compatibility (0-1) - Check if both players have the game
+        const gameCompatibility = await this.calculateGameCompatibility(playerId, parseInt(opponentId), gameId);
         
         // Skill Match (0-1)
         const skillDiff = Math.abs(playerData.skillProfile.elo - opponentData.skillProfile.elo);
@@ -273,13 +297,14 @@ export class MatchmakingService {
         const maxHeat = 10; // Maximum expected heat score
         const rivalryScore = Math.min(1, rivalryHeat / maxHeat);
 
-        // Weighted MMI
-        const MMI_score = (skillScore * 0.40) + (finalBettingScore * 0.35) + (rivalryScore * 0.25);
+        // Weighted MMI - Adjusted weights to include game compatibility
+        const MMI_score = (gameCompatibility * 0.30) + (skillScore * 0.30) + (finalBettingScore * 0.25) + (rivalryScore * 0.15);
 
         MMIResults.push({
           opponentId: parseInt(opponentId),
           MMI_score,
           breakdown: {
+            gameCompatibility,
             skillScore,
             bettingScore: finalBettingScore,
             rivalryScore
@@ -293,6 +318,49 @@ export class MatchmakingService {
     return MMIResults.sort((a, b) => b.MMI_score - a.MMI_score);
   }
 
+  // Calculate game compatibility between two players
+  async calculateGameCompatibility(player1Id, player2Id, gameId = null) {
+    // If no specific game is requested, check overall game overlap
+    if (!gameId) {
+      const player1 = await prisma.users.findUnique({
+        where: { id: player1Id },
+        select: { Games: true }
+      });
+      
+      const player2 = await prisma.users.findUnique({
+        where: { id: player2Id },
+        select: { Games: true }
+      });
+
+      if (!player1 || !player2) return 0;
+
+      const player1Games = new Set(player1.Games);
+      const player2Games = new Set(player2.Games);
+      
+      // Calculate Jaccard similarity (intersection over union)
+      const intersection = [...player1Games].filter(game => player2Games.has(game));
+      const union = [...new Set([...player1Games, ...player2Games])];
+      
+      return union.length > 0 ? intersection.length / union.length : 0;
+    } else {
+      // If specific game is requested, check if both players have it
+      const player1 = await prisma.users.findUnique({
+        where: { id: player1Id },
+        select: { Games: true }
+      });
+      
+      const player2 = await prisma.users.findUnique({
+        where: { id: player2Id },
+        select: { Games: true }
+      });
+
+      if (!player1 || !player2) return 0;
+
+      const bothHaveGame = player1.Games.includes(gameId) && player2.Games.includes(gameId);
+      return bothHaveGame ? 1.0 : 0.0;
+    }
+  }
+
   // Calculate volatility bonus for betting compatibility
   calculateVolatilityBonus(player1Betting, player2Betting) {
     const volatilityDiff = Math.abs(player1Betting.stakeVolatility - player2Betting.stakeVolatility);
@@ -303,7 +371,7 @@ export class MatchmakingService {
   }
 
   // Select top matches for a player
-  async selectTopMatches(playerId, limit = 3) {
+  async selectTopMatches(playerId, limit = 3, gameId = null) {
     // Get all active players except the current player
     const allPlayers = await prisma.users.findMany({
       where: {
@@ -314,8 +382,17 @@ export class MatchmakingService {
     });
 
     const potentialOpponents = allPlayers.map(p => p.id.toString());
-    const sortedMatches = await this.calculateMMIScores(playerId, potentialOpponents);
+    const sortedMatches = await this.calculateMMIScores(playerId, potentialOpponents, gameId);
     const topMatches = sortedMatches.slice(0, limit);
+
+    // Get game information if gameId is provided
+    let gameInfo = null;
+    if (gameId) {
+      gameInfo = await prisma.Lookup_Game.findUnique({
+        where: { id: gameId },
+        select: { id: true, Game: true, API: true }
+      });
+    }
 
     // Add opponent details and incentives to each match
     for (const match of topMatches) {
@@ -325,6 +402,8 @@ export class MatchmakingService {
         username: opponent.Username,
         avatar: opponent.Avatar
       };
+      match.gameType = gameInfo ? gameInfo.Game : null;
+      match.gameId = gameId;
       match.incentives = await this.calculateIncentives(playerId, match.opponentId);
     }
 

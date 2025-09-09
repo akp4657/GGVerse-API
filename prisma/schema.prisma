@@ -102,6 +102,7 @@ model Users {
   LastMMIUpdate                             DateTime?
   Online                                    Boolean?           @default(false)
   Gamertag                                  String?            @db.VarChar
+  Games                                     Int[]
   Challenges_Challenges_ChallengedIdToUsers Challenges[]       @relation("Challenges_ChallengedIdToUsers")
   Challenges_Challenges_ChallengerIdToUsers Challenges[]       @relation("Challenges_ChallengerIdToUsers")
   Match_History_Match_History_P1ToUsers     Match_History[]    @relation("Match_History_P1ToUsers")

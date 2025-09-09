@@ -8,9 +8,10 @@ const matchmakingService = new MatchmakingService();
 export const getMatchSuggestions = async (req, res) => {
   try {
     const { userId } = req.params;
-    const { limit = 3 } = req.query;
+    const { limit = 3, gameId } = req.query;
+    const gameIdInt = gameId ? parseInt(gameId) : null;
     
-    const suggestions = await matchmakingService.selectTopMatches(parseInt(userId), parseInt(limit));
+    const suggestions = await matchmakingService.selectTopMatches(parseInt(userId), parseInt(limit), gameIdInt);
     res.json({ success: true, suggestions });
   } catch (error) {
     console.error('Error getting match suggestions:', error);
@@ -46,7 +47,9 @@ export const updatePlayerMMI = async (req, res) => {
 export const getPlayerRivalries = async (req, res) => {
   try {
     const { userId } = req.params;
-    const playerData = await matchmakingService.getPlayerData(parseInt(userId));
+    const { gameId } = req.query;
+    const gameIdInt = gameId ? parseInt(gameId) : null;
+    const playerData = await matchmakingService.getPlayerData(parseInt(userId), gameIdInt);
     
     // Get rival details
     const rivals = [];
@@ -79,7 +82,9 @@ export const getPlayerRivalries = async (req, res) => {
 export const getMatchmakingStats = async (req, res) => {
   try {
     const { userId } = req.params;
-    const playerData = await matchmakingService.getPlayerData(parseInt(userId));
+    const { gameId } = req.query;
+    const gameIdInt = gameId ? parseInt(gameId) : null;
+    const playerData = await matchmakingService.getPlayerData(parseInt(userId), gameIdInt);
     
     const stats = {
       totalMatches: playerData.skillProfile.totalMatches,
@@ -103,7 +108,7 @@ export const getMatchmakingStats = async (req, res) => {
 export const getPotentialOpponents = async (req, res) => {
   try {
     const { userId } = req.params;
-    const { limit = 10 } = req.query;
+    const { limit = 10, gameId } = req.query;
     
     // Get all active players except the current player
     const allPlayers = await prisma.users.findMany({
@@ -115,7 +120,17 @@ export const getPotentialOpponents = async (req, res) => {
     });
 
     const potentialOpponents = allPlayers.map(p => p.id.toString());
-    const mmiScores = await matchmakingService.calculateMMIScores(parseInt(userId), potentialOpponents);
+    const gameIdInt = gameId ? parseInt(gameId) : null;
+    const mmiScores = await matchmakingService.calculateMMIScores(parseInt(userId), potentialOpponents, gameIdInt);
+    
+    // Get game information if gameId is provided
+    let gameInfo = null;
+    if (gameIdInt) {
+      gameInfo = await prisma.Lookup_Game.findUnique({
+        where: { id: gameIdInt },
+        select: { id: true, Game: true, API: true }
+      });
+    }
     
     // Add opponent details to MMI results
     const opponentsWithDetails = await Promise.all(
@@ -123,6 +138,8 @@ export const getPotentialOpponents = async (req, res) => {
         const opponent = allPlayers.find(p => p.id === match.opponentId);
         return {
           ...match,
+          gameType: gameInfo ? gameInfo.Game : null,
+          gameId: gameIdInt,
           opponent: {
             id: opponent.id,
             username: opponent.Username,
