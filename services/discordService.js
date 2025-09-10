@@ -158,20 +158,40 @@ export const handleOAuthCallback = async (req, res) => {
       }
     });
 
-    // Redirect to frontend with success
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-    const successUrl = `${frontendUrl}/profile?discord=success&username=${encodeURIComponent(discordUsername)}`;
-    
-    res.redirect(successUrl);
+    // Check if request is from mobile device
+    const isMobile = req.headers['user-agent']?.includes('Mobile') || 
+                     req.headers['user-agent']?.includes('Android') || 
+                     req.headers['user-agent']?.includes('iPhone');
+
+    if (isMobile) {
+      // For mobile, redirect to custom URL scheme
+      const successUrl = `ggverse://discord-oauth?success=true&username=${encodeURIComponent(discordUsername)}`;
+      res.redirect(successUrl);
+    } else {
+      // For web, use existing logic
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+      const successUrl = `${frontendUrl}/profile?discord=success&username=${encodeURIComponent(discordUsername)}`;
+      res.redirect(successUrl);
+    }
 
   } catch (error) {
     console.error('Error handling OAuth callback:', error);
     
-    // Redirect to frontend with error
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-    const errorUrl = `${frontendUrl}/profile?discord=error&message=${encodeURIComponent('Failed to link Discord account')}`;
-    
-    res.redirect(errorUrl);
+    // Check if request is from mobile device
+    const isMobile = req.headers['user-agent']?.includes('Mobile') || 
+                     req.headers['user-agent']?.includes('Android') || 
+                     req.headers['user-agent']?.includes('iPhone');
+
+    if (isMobile) {
+      // For mobile, redirect to custom URL scheme
+      const errorUrl = `ggverse://discord-oauth?success=false&message=${encodeURIComponent('Failed to link Discord account')}`;
+      res.redirect(errorUrl);
+    } else {
+      // For web, use existing logic
+      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+      const errorUrl = `${frontendUrl}/profile?discord=error&message=${encodeURIComponent('Failed to link Discord account')}`;
+      res.redirect(errorUrl);
+    }
   }
 };
 
