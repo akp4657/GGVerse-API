@@ -115,7 +115,7 @@ export const getBadgeById = async (req, res) => {
         badges: formattedBadges
       });
     } else {
-      // Single ID handling (original logic)
+      // Single ID handling - return as array for consistency
       const badgeId = parseInt(id);
 
       if (isNaN(badgeId)) {
@@ -130,15 +130,20 @@ export const getBadgeById = async (req, res) => {
         return res.status(404).send({ error: 'Badge not found' });
       }
 
+      const formattedBadge = {
+        id: badge.id,
+        name: badge.Name,
+        description: badge.Description,
+        icon: badge.Icon,
+        color: badge.Color
+      };
+
       res.json({
         success: true,
-        badge: {
-          id: badge.id,
-          name: badge.Name,
-          description: badge.Description,
-          icon: badge.Icon,
-          color: badge.Color
-        }
+        requestedIds: [badgeId],
+        foundCount: 1,
+        missingIds: [],
+        badges: [formattedBadge]
       });
     }
   } catch (error) {
