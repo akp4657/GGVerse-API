@@ -47,21 +47,7 @@ export const validateToken = async (req, res) => {
 
     res.json({ 
       valid: true, 
-      user: {
-        id: user.id,
-        email: user.Email,
-        username: user.Username,
-        wallet: user.Wallet,
-        rank: user.Rank,
-        avatar: user.Avatar,
-        // createdAt: user.created_at,
-        // updatedAt: user.created_at, // Using created_at since there's no updated_at field
-        authenticated: user.Authenticated,
-        badges: user.Badges,
-        jwt: user.JWT,
-        paypalPayerId: user.PayPalPayerId,
-        stripePayerId: user.StripePayerId
-      }
+      user: user
     });
   } catch (error) {
     console.error('Token validation error:', error);
