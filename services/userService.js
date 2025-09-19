@@ -300,7 +300,11 @@ export const getUsers = async (req, res) => {
         Username: true,
         Gamertag: true,
         WinsLosses: true,
+        Streak: true,
         Online: true,
+        MMI: true,
+        Badges: true,
+        Rivals: true,
         Active: true,
         Earnings: true
       }
@@ -326,6 +330,11 @@ export const getUserById = async (req, res) => {
         Discord: true,
         Avatar: true,
         Gamertag: true,
+        WinsLosses: true,
+        Streak: true,
+        Badges: true,
+        Rivals: true,
+        Earnings: true,
         MMI: true,
         Online: true,
         Active: true
