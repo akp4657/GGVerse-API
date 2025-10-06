@@ -5,7 +5,7 @@ const prisma = new PrismaClient();
 
 /**
  * Create a Discord thread for an accepted challenge
- * This endpoint will be called by your Discord bot when both players accept a challenge
+ * This endpoint will be called by ther Discord bot when both players accept a challenge
  */
 export const createDiscordThread = async (req, res) => {
   try {
