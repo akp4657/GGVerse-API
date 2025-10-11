@@ -31,14 +31,38 @@ export const getPlayerData = async (req, res) => {
   }
 };
 
-// Update player's MMI score
+// Update player's MMI score for all games
 export const updatePlayerMMI = async (req, res) => {
   try {
     const { userId } = req.params;
-    const mmiScore = await matchmakingService.updatePlayerMMI(parseInt(userId));
-    res.json({ success: true, mmiScore });
+    const mmiScores = await matchmakingService.updatePlayerMMI(parseInt(userId));
+    res.json({ success: true, mmiScores });
   } catch (error) {
     console.error('Error updating MMI:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// Update player's MMI score for a specific game
+export const updatePlayerMMIForGame = async (req, res) => {
+  try {
+    const { userId, gameId } = req.params;
+    const mmiScore = await matchmakingService.updatePlayerMMIForGame(parseInt(userId), parseInt(gameId));
+    res.json({ success: true, mmiScore });
+  } catch (error) {
+    console.error('Error updating MMI for game:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// Get player's MMI score for a specific game
+export const getPlayerMMIForGame = async (req, res) => {
+  try {
+    const { userId, gameId } = req.params;
+    const mmiScore = await matchmakingService.getPlayerMMIForGame(parseInt(userId), parseInt(gameId));
+    res.json({ success: true, mmiScore });
+  } catch (error) {
+    console.error('Error getting MMI for game:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 };
@@ -94,7 +118,8 @@ export const getMatchmakingStats = async (req, res) => {
       avgStakeSize: playerData.bettingProfile.avgStakeSize,
       wagerSuccessRate: playerData.bettingProfile.wagerSuccessRate,
       totalRivals: playerData.rivalryProfile.totalOpponents,
-      mmiScore: playerData.skillProfile.elo // This will be updated when MMI is calculated
+      mmiData: playerData.mmiData,
+      allGames: playerData.allGames
     };
     
     res.json({ success: true, stats });

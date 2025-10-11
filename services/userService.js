@@ -281,18 +281,18 @@ export const getUsers = async (req, res) => {
     const users = await prisma.Users.findMany({
       select: {
         id: true,
-        Rank: true,
-        Avatar: true,
-        Username: true,
-        Gamertag: true,
-        WinsLosses: true,
-        Streak: true,
-        Online: true,
-        MMI: true,
-        Badges: true,
-        Rivals: true,
-        Active: true,
-        Earnings: true
+        // Rank: true,
+        // Avatar: true,
+        // Username: true,
+        // Gamertag: true,
+        // WinsLosses: true,
+        // Streak: true,
+        // Online: true,
+        MMI: true
+        // Badges: true,
+        // Rivals: true,
+        // Active: true,
+        // Earnings: true
       }
     });
 

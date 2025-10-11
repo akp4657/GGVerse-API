@@ -27,7 +27,22 @@ export class MatchmakingService {
     // Calculate rivalry profile (game-specific if gameId provided)
     const rivalryProfile = await this.calculateRivalryProfile(playerId, gameId);
 
-    return { skillProfile, bettingProfile, rivalryProfile };
+    // Get MMI data for the specific game or all games
+    let mmiData = null;
+    if (gameId) {
+      mmiData = await this.getPlayerMMIForGame(playerId, gameId);
+    } else {
+      // Return all MMI data if no specific game requested
+      mmiData = user.MMI || {};
+    }
+
+    return { 
+      skillProfile, 
+      bettingProfile, 
+      rivalryProfile, 
+      mmiData,
+      allGames: user.Games || []
+    };
   }
 
   // Calculate skill profile from match history
@@ -45,7 +60,7 @@ export class MatchmakingService {
       whereClause.Game = gameId;
     }
 
-    const recentMatches = await prisma.match_History.findMany({
+    const recentMatches = await prisma.Match_History.findMany({
       where: whereClause,
       orderBy: { created_at: 'desc' },
       take: MatchmakingService.RECENT_MATCHES
@@ -92,7 +107,7 @@ export class MatchmakingService {
       whereClause.Game = gameId;
     }
 
-    const bettingMatches = await prisma.match_History.findMany({
+    const bettingMatches = await prisma.Match_History.findMany({
       where: whereClause,
       orderBy: { created_at: 'desc' },
       take: MatchmakingService.BETTING_MATCHES
@@ -271,6 +286,9 @@ export class MatchmakingService {
     const playerData = await this.getPlayerData(playerId, gameId);
     const MMIResults = [];
 
+    // Get player's MMI for the specific game
+    const playerMMI = await this.getPlayerMMIForGame(playerId, gameId || 1);
+
     for (const opponentId of potentialOpponents) {
       try {
         const opponentData = await this.getPlayerData(parseInt(opponentId), gameId);
@@ -278,10 +296,11 @@ export class MatchmakingService {
         // Game Compatibility (0-1) - Check if both players have the game
         const gameCompatibility = await this.calculateGameCompatibility(playerId, parseInt(opponentId), gameId);
         
-        // Skill Match (0-1)
-        const skillDiff = Math.abs(playerData.skillProfile.elo - opponentData.skillProfile.elo);
-        const maxEloDiff = 1000; // Maximum expected Elo difference
-        const skillScore = Math.max(0, 1 - (skillDiff / maxEloDiff));
+        // Skill Match (0-1) - Use MMI scores instead of Elo for better game-specific matching
+        const opponentMMI = await this.getPlayerMMIForGame(parseInt(opponentId), gameId || 1);
+        const mmiDiff = Math.abs(playerMMI - opponentMMI);
+        const maxMMIDiff = 1000; // Maximum expected MMI difference
+        const skillScore = Math.max(0, 1 - (mmiDiff / maxMMIDiff));
 
         // Betting Compatibility (0-1)
         const stakeDiff = Math.abs(playerData.bettingProfile.avgStakeSize - opponentData.bettingProfile.avgStakeSize);
@@ -297,12 +316,14 @@ export class MatchmakingService {
         const maxHeat = 10; // Maximum expected heat score
         const rivalryScore = Math.min(1, rivalryHeat / maxHeat);
 
-        // Weighted MMI - Adjusted weights to include game compatibility
+        // Weighted MMI - Adjusted weights to include game compatibility and MMI-based skill matching
         const MMI_score = (gameCompatibility * 0.30) + (skillScore * 0.30) + (finalBettingScore * 0.25) + (rivalryScore * 0.15);
 
         MMIResults.push({
           opponentId: parseInt(opponentId),
           MMI_score,
+          playerMMI,
+          opponentMMI,
           breakdown: {
             gameCompatibility,
             skillScore,
@@ -504,27 +525,109 @@ export class MatchmakingService {
     return consecutiveCount >= 3; // More than 3 consecutive matches
   }
 
-  // Update player's MMI score
+  // Update player's MMI score for all games
   async updatePlayerMMI(playerId) {
-    const playerData = await this.getPlayerData(playerId);
+    // Get all games the player participates in
+    const user = await prisma.users.findUnique({
+      where: { id: playerId },
+      select: { Games: true, MMI: true }
+    });
+
+    if (!user) {
+      throw new Error('Player not found');
+    }
+
+    const gameMMI = {};
     
-    // Calculate overall MMI score (average of all components)
+    // Calculate MMI for each game the player has
+    for (const gameId of user.Games) {
+      const playerData = await this.getPlayerData(playerId, gameId);
+      
+      // Calculate MMI score for this specific game
+      const skillComponent = playerData.skillProfile.winRate * 1000;
+      const bettingComponent = playerData.bettingProfile.wagerSuccessRate * 1000;
+      const rivalryComponent = Math.min(1000, Object.values(playerData.rivalryProfile.rivalryHeatScores).reduce((sum, heat) => sum + heat, 0));
+      
+      const gameMMIScore = (skillComponent + bettingComponent + rivalryComponent) / 3;
+      gameMMI[gameId.toString()] = gameMMIScore;
+    }
+
+    // If no games, set default MMI structure
+    if (user.Games.length === 0) {
+      gameMMI["1"] = 1000; // Default to game 1 with max MMI
+    }
+
+    // Update the player's MMI score (assuming MMI field can store JSON)
+    await prisma.users.update({
+      where: { id: playerId },
+      data: {
+        MMI: gameMMI,
+        LastMMIUpdate: new Date()
+      }
+    });
+
+    return gameMMI;
+  }
+
+  // Update player's MMI score for a specific game
+  async updatePlayerMMIForGame(playerId, gameId) {
+    const playerData = await this.getPlayerData(playerId, gameId);
+    
+    // Calculate MMI score for this specific game
     const skillComponent = playerData.skillProfile.winRate * 1000;
     const bettingComponent = playerData.bettingProfile.wagerSuccessRate * 1000;
     const rivalryComponent = Math.min(1000, Object.values(playerData.rivalryProfile.rivalryHeatScores).reduce((sum, heat) => sum + heat, 0));
     
-    const overallMMI = (skillComponent + bettingComponent + rivalryComponent) / 3;
+    const gameMMIScore = (skillComponent + bettingComponent + rivalryComponent) / 3;
+
+    // Get current MMI data
+    const user = await prisma.users.findUnique({
+      where: { id: playerId },
+      select: { MMI: true }
+    });
+
+    let currentMMI = {};
+    if (user.MMI && typeof user.MMI === 'object') {
+      currentMMI = user.MMI;
+    } else if (typeof user.MMI === 'number') {
+      // Migrate from old single MMI format
+      currentMMI = { "1": user.MMI };
+    }
+
+    // Update the specific game's MMI
+    currentMMI[gameId.toString()] = gameMMIScore;
 
     // Update the player's MMI score
     await prisma.users.update({
       where: { id: playerId },
       data: {
-        MMI: overallMMI,
+        MMI: currentMMI,
         LastMMIUpdate: new Date()
       }
     });
 
-    return overallMMI;
+    return gameMMIScore;
+  }
+
+  // Get player's MMI score for a specific game
+  async getPlayerMMIForGame(playerId, gameId) {
+    const user = await prisma.users.findUnique({
+      where: { id: playerId },
+      select: { MMI: true }
+    });
+
+    if (!user) {
+      throw new Error('Player not found');
+    }
+
+    if (user.MMI && typeof user.MMI === 'object') {
+      return user.MMI[gameId.toString()] || 1000; // Default to 1000 if game not found
+    } else if (typeof user.MMI === 'number') {
+      // Legacy single MMI format - return for game 1, default for others
+      return gameId === 1 ? user.MMI : 1000;
+    }
+
+    return 1000; // Default MMI
   }
 }
 

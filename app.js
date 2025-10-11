@@ -66,6 +66,8 @@ app.get('/wallet/transactions/:userId', walletService.getTransactionHistory);
 app.get('/matchmaking/suggestions/:userId', matchmakingController.getMatchSuggestions);
 app.get('/matchmaking/player-data/:userId', matchmakingController.getPlayerData);
 app.post('/matchmaking/update-mmi/:userId', matchmakingController.updatePlayerMMI);
+app.post('/matchmaking/update-mmi/:userId/:gameId', matchmakingController.updatePlayerMMIForGame);
+app.get('/matchmaking/mmi/:userId/:gameId', matchmakingController.getPlayerMMIForGame);
 app.get('/matchmaking/rivalries/:userId', matchmakingController.getPlayerRivalries);
 app.get('/matchmaking/stats/:userId', matchmakingController.getMatchmakingStats);
 app.get('/matchmaking/opponents/:userId', matchmakingController.getPotentialOpponents);

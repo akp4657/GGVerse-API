@@ -98,11 +98,12 @@ model Users {
   Earnings                                  Int?
   JWT                                       String?            @db.VarChar
   Active                                    Boolean?           @default(true)
-  MMI                                       Float?             @default(1000)
+  MMI                                       Json?              @default("{\"1\": 1000, \"2\": 1000, \"3\": 1000}") @db.Json
   LastMMIUpdate                             DateTime?
   Online                                    Boolean?           @default(false)
   Gamertag                                  String?            @db.VarChar
   Games                                     Int[]
+  SupabaseUID                               String?            @db.VarChar
   Challenges_Challenges_ChallengedIdToUsers Challenges[]       @relation("Challenges_ChallengedIdToUsers")
   Challenges_Challenges_ChallengerIdToUsers Challenges[]       @relation("Challenges_ChallengerIdToUsers")
   Match_History_Match_History_P1ToUsers     Match_History[]    @relation("Match_History_P1ToUsers")
