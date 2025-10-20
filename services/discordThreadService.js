@@ -23,8 +23,8 @@ export const createDiscordThread = async (req, res) => {
     const challenge = await prisma.challenges.findUnique({
       where: { id: parseInt(challengeId) },
       include: {
-        challenger: true,
-        challenged: true
+        Challenger: true,
+        Challenged: true
       }
     });
 
@@ -44,7 +44,7 @@ export const createDiscordThread = async (req, res) => {
     const discordThread = await prisma.discord_Threads.create({
       data: {
         ThreadId: threadId,
-        Members: [challenge.challengerId, challenge.challengedId],
+        Members: [challenge.ChallengerId, challenge.ChallengedId],
         Open: true,
         Dispute: false
       }
@@ -74,17 +74,17 @@ export const getDiscordThreadInfo = async (req, res) => {
       where: { id: parseInt(challengeId) },
       select: {
         id: true,
-        discordThreadId: true,
-        discordThreadUrl: true,
-        status: true,
-        challenger: {
+        DiscordThreadId: true,
+        DiscordThreadUrl: true,
+        Status: true,
+        Challenger: {
           select: {
             id: true,
             Username: true,
             Discord: true
           }
         },
-        challenged: {
+        Challenged: {
           select: {
             id: true,
             Username: true,
@@ -98,7 +98,7 @@ export const getDiscordThreadInfo = async (req, res) => {
       return res.status(404).json({ error: 'Challenge not found' });
     }
 
-    if (!challenge.discordThreadId) {
+    if (!challenge.DiscordThreadId) {
       return res.status(404).json({ error: 'No Discord thread found for this challenge' });
     }
 
@@ -125,8 +125,8 @@ export const closeDiscordThread = async (req, res) => {
     const challenge = await prisma.challenges.findUnique({
       where: { id: parseInt(challengeId) },
       include: {
-        challenger: true,
-        challenged: true
+        Challenger: true,
+        Challenged: true
       }
     });
 
@@ -135,17 +135,17 @@ export const closeDiscordThread = async (req, res) => {
     }
 
     // Verify the user is part of the challenge
-    if (challenge.challengerId !== parseInt(userId) && challenge.challengedId !== parseInt(userId)) {
+    if (challenge.ChallengerId !== parseInt(userId) && challenge.ChallengedId !== parseInt(userId)) {
       return res.status(403).json({ error: 'Not authorized to close this thread' });
     }
 
-    if (!challenge.discordThreadId) {
+    if (!challenge.DiscordThreadId) {
       return res.status(404).json({ error: 'No Discord thread found for this challenge' });
     }
 
     // Update the Discord thread to closed
     await prisma.discord_Threads.updateMany({
-      where: { ThreadId: challenge.discordThreadId },
+      where: { ThreadId: challenge.DiscordThreadId },
       data: { Open: false }
     });
 
@@ -171,20 +171,20 @@ export const getUserDiscordThreads = async (req, res) => {
     const challenges = await prisma.challenges.findMany({
       where: {
         OR: [
-          { challengerId: parseInt(userId) },
-          { challengedId: parseInt(userId) }
+          { ChallengerId: parseInt(userId) },
+          { ChallengedId: parseInt(userId) }
         ],
-        discordThreadId: { not: null }
+        DiscordThreadId: { not: null }
       },
       include: {
-        challenger: {
+        Challenger: {
           select: {
             id: true,
             Username: true,
             Avatar: true
           }
         },
-        challenged: {
+        Challenged: {
           select: {
             id: true,
             Username: true,
@@ -193,7 +193,7 @@ export const getUserDiscordThreads = async (req, res) => {
         }
       },
       orderBy: {
-        createdAt: 'desc'
+        CreatedAt: 'desc'
       }
     });
 
