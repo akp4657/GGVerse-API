@@ -13,6 +13,8 @@ export const createDiscordThread = async (req, res) => {
 
     // Validate required fields
     if (!challengeId || !threadId || !threadUrl) {
+      console.log('Missing required fields: challengeId, threadId, threadUrl');
+      console.log(req.body);
       return res.status(400).json({ 
         error: 'Missing required fields: challengeId, threadId, threadUrl' 
       });
