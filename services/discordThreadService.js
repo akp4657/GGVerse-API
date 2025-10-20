@@ -12,11 +12,10 @@ export const createDiscordThread = async (req, res) => {
     const { challengeId, threadId, threadUrl } = req.body;
 
     // Validate required fields
-    if (!challengeId || !threadId || !threadUrl) {
-      console.log('Missing required fields: challengeId, threadId, threadUrl');
-      console.log(req.body);
+    if (!challengeId || !threadId) {
+      console.log('Missing required fields: challengeId, threadId');
       return res.status(400).json({ 
-        error: 'Missing required fields: challengeId, threadId, threadUrl' 
+        error: 'Missing required fields: challengeId, threadId' 
       });
     }
 
@@ -30,6 +29,7 @@ export const createDiscordThread = async (req, res) => {
     });
 
     if (!challenge) {
+      console.log('Challenge not found');
       return res.status(404).json({ error: 'Challenge not found' });
     }
 

@@ -302,7 +302,7 @@ export const updateChallengeWithDiscordThread = async (challengeId, threadId, th
       where: { id: challengeId },
       data: {
         DiscordThreadId: threadId,
-        DiscordThreadUrl: threadUrl
+        DiscordThreadUrl: threadUrl || null
       }
     });
 
