@@ -31,13 +31,6 @@ export const createDiscordThread = async (req, res) => {
       return res.status(404).json({ error: 'Challenge not found' });
     }
 
-    // Verify the challenge is accepted
-    if (challenge.status !== 'accepted') {
-      return res.status(400).json({ 
-        error: 'Cannot create Discord thread for non-accepted challenge' 
-      });
-    }
-
     // Update the challenge with Discord thread information
     const updatedChallenge = await challengeService.updateChallengeWithDiscordThread(
       parseInt(challengeId),
