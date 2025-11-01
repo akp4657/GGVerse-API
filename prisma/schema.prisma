@@ -80,12 +80,6 @@ model Users {
   Rank                                      Int?
   Wallet                                    Int                @default(0)
   PaymentType                               Int                @default(1)
-  PayPalPayerId                             String?            @db.VarChar
-  BillingAgreementId                        String?            @db.VarChar
-  CardLast                                  Decimal?           @db.Decimal
-  CardBrand                                 String?            @db.VarChar
-  CardExpMonth                              Decimal?           @db.Decimal
-  CardExpYear                               Decimal?           @db.Decimal
   Rivals                                    Int[]
   Badges                                    Int[]
   Discord                                   String?            @db.VarChar
@@ -103,28 +97,30 @@ model Users {
   Online                                    Boolean?           @default(false)
   Gamertag                                  String?            @db.VarChar
   Games                                     Int[]
-  SupabaseUID                               String?            @db.VarChar
   Challenges_Challenges_ChallengedIdToUsers Challenges[]       @relation("Challenges_ChallengedIdToUsers")
   Challenges_Challenges_ChallengerIdToUsers Challenges[]       @relation("Challenges_ChallengerIdToUsers")
   Match_History_Match_History_P1ToUsers     Match_History[]    @relation("Match_History_P1ToUsers")
   Match_History_Match_History_P2ToUsers     Match_History[]    @relation("Match_History_P2ToUsers")
+  PaymentMethod                             PaymentMethod[]
   Transactions                              Transaction[]
   Lookup_PaymentType                        Lookup_PaymentType @relation(fields: [PaymentType], references: [id], onDelete: SetDefault)
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model Transaction {
-  id                    Int      @id @default(autoincrement())
-  UserId                Int
-  Type                  String   @db.VarChar
-  Amount                Decimal  @db.Decimal
-  Currency              String   @default("USD") @db.VarChar
-  Description           String?  @db.VarChar
-  StripePaymentIntentId String?  @db.VarChar
-  StripePayoutId        String?  @db.VarChar
-  Status                String   @default("completed") @db.VarChar
-  created_at            DateTime @default(now()) @db.Timestamptz(6)
-  Users                 Users    @relation(fields: [UserId], references: [id], onDelete: Cascade)
+  id                  Int            @id @default(autoincrement())
+  UserId              Int
+  Type                String         @db.VarChar
+  Amount              Decimal        @db.Decimal
+  Currency            String         @default("USD") @db.VarChar
+  Description         String?        @db.VarChar
+  PaynetworxPaymentId String?        @db.VarChar
+  Paynetworx3DSId     String?        @db.VarChar
+  Status              String         @default("completed") @db.VarChar
+  created_at          DateTime       @default(now()) @db.Timestamptz(6)
+  PaymentMethodId     Int?
+  PaymentMethod       PaymentMethod? @relation(fields: [PaymentMethodId], references: [id], onDelete: Cascade)
+  Users               Users          @relation(fields: [UserId], references: [id], onDelete: Cascade)
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -146,4 +142,23 @@ model Challenges {
   @@index([ChallengerId], map: "Challenges_challengerId_idx")
   @@index([CreatedAt], map: "Challenges_createdAt_idx")
   @@index([Status], map: "Challenges_status_idx")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model PaymentMethod {
+  id                      Int           @id @default(autoincrement())
+  UserId                  Int
+  Provider                String?       @default("paynetworx")
+  ProviderPaymentMethodId String?       @db.VarChar
+  CardLast4               String?       @db.VarChar
+  CardBrand               String?       @db.VarChar
+  CardExpMonth            String?       @db.VarChar
+  CardExpYear             String?       @db.VarChar
+  Active                  Boolean?
+  Verified                Boolean?      @default(false)
+  created_at              DateTime?     @default(now()) @db.Timestamptz(6)
+  updated_at              DateTime?     @db.Timestamptz(6)
+  Users                   Users         @relation(fields: [UserId], references: [id], onDelete: Cascade)
+  Transaction             Transaction[]
 }

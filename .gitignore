@@ -3,3 +3,6 @@ node_modules
 .env
 
 /generated/prisma
+
+# Temporary uploads directory (files are deleted after Cloudinary upload)
+uploads/

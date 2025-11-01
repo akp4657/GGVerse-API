@@ -1,6 +1,7 @@
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import * as emailService from '../services/emailService.js';
+import * as cloudinaryService from '../services/cloudinaryService.js';
 import prisma from '../prisma/prisma.js';
 
 // Token blacklist (in production, use Redis or database)
@@ -468,6 +469,115 @@ export const updateUserProfile = async (req, res) => {
   } catch (err) {
     console.error('Error updating user profile:', err);
     res.status(500).send({ message: 'Failed to update user profile' });
+  }
+};
+
+// Upload avatar via Cloudinary
+export const uploadAvatar = async (req, res) => {
+  try {
+    const user = req.user;
+    
+    if (!user) {
+      return res.status(401).send({ message: 'User not authenticated' });
+    }
+
+    if (!req.file) {
+      return res.status(400).send({ message: 'No file uploaded' });
+    }
+
+    // Get current user to check for existing avatar
+    const currentUser = await prisma.Users.findUnique({
+      where: { id: user.userId },
+      select: { Avatar: true }
+    });
+
+    // Upload to Cloudinary
+    const uploadResult = await cloudinaryService.uploadAvatar(req.file, user.userId);
+
+    // Delete old avatar from Cloudinary if it exists and is a Cloudinary URL
+    if (currentUser?.Avatar) {
+      await cloudinaryService.deleteAvatar(currentUser.Avatar);
+    }
+
+    // Update user's avatar URL in database
+    const updatedUser = await prisma.Users.update({
+      where: { id: user.userId },
+      data: { Avatar: uploadResult.url },
+      select: {
+        id: true,
+        Username: true,
+        Email: true,
+        Avatar: true,
+      }
+    });
+
+    res.status(200).send({
+      message: 'Avatar uploaded successfully',
+      avatar: uploadResult.url,
+      user: updatedUser
+    });
+  } catch (error) {
+    console.error('Error uploading avatar:', error);
+    
+    // Handle multer errors
+    if (error.message && error.message.includes('Invalid file type')) {
+      return res.status(400).send({ message: error.message });
+    }
+    if (error.message && error.message.includes('File size')) {
+      return res.status(400).send({ message: error.message });
+    }
+    
+    res.status(500).send({ 
+      message: 'Failed to upload avatar',
+      error: error.message 
+    });
+  }
+};
+
+// Delete avatar
+export const deleteAvatar = async (req, res) => {
+  try {
+    const user = req.user;
+    
+    if (!user) {
+      return res.status(401).send({ message: 'User not authenticated' });
+    }
+
+    // Get current user's avatar
+    const currentUser = await prisma.Users.findUnique({
+      where: { id: user.userId },
+      select: { Avatar: true }
+    });
+
+    if (!currentUser?.Avatar) {
+      return res.status(404).send({ message: 'No avatar to delete' });
+    }
+
+    // Delete from Cloudinary
+    await cloudinaryService.deleteAvatar(currentUser.Avatar);
+
+    // Update user's avatar to null in database
+    const updatedUser = await prisma.Users.update({
+      where: { id: user.userId },
+      data: { Avatar: null },
+      select: {
+        id: true,
+        Username: true,
+        Email: true,
+        Avatar: true,
+      }
+    });
+
+    res.status(200).send({
+      message: 'Avatar deleted successfully',
+      user: updatedUser
+    });
+  } catch (error) {
+    console.error('Error deleting avatar:', error);
+    res.status(500).send({ 
+      message: 'Failed to delete avatar',
+      error: error.message 
+    });
   }
 };
 
