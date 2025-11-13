@@ -8,7 +8,26 @@ datasource db {
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model Challenges {
+  id                                   Int      @id @default(autoincrement())
+  ChallengerId                         Int
+  ChallengedId                         Int
+  Game                                 String   @db.VarChar
+  Wager                                Decimal  @db.Decimal
+  Status                               String   @default("pending") @db.VarChar
+  CreatedAt                            DateTime @default(now()) @db.Timestamptz(6)
+  ExpiresAt                            DateTime @db.Timestamptz(6)
+  DiscordThreadId                      String?  @db.VarChar
+  DiscordThreadUrl                     String?  @db.VarChar
+  Users_Challenges_ChallengedIdToUsers Users    @relation("Challenges_ChallengedIdToUsers", fields: [ChallengedId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "Challenges_challengedId_fkey")
+  Users_Challenges_ChallengerIdToUsers Users    @relation("Challenges_ChallengerIdToUsers", fields: [ChallengerId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "Challenges_challengerId_fkey")
+
+  @@index([ChallengedId], map: "Challenges_challengedId_idx")
+  @@index([ChallengerId], map: "Challenges_challengerId_idx")
+  @@index([CreatedAt], map: "Challenges_createdAt_idx")
+  @@index([Status], map: "Challenges_status_idx")
+}
+
 model Discord_Threads {
   id         Int      @id(map: "Discord_Threads_pkey1") @default(autoincrement())
   ThreadId   String   @db.VarChar
@@ -18,7 +37,6 @@ model Discord_Threads {
   created_at DateTime @default(now()) @db.Timestamptz(6)
 }
 
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model Lookup_Badge {
   id          Int     @id @default(autoincrement())
   Name        String? @db.VarChar
@@ -28,6 +46,13 @@ model Lookup_Badge {
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model Lookup_Console {
+  id         Int      @id @default(autoincrement())
+  Console    String?  @db.VarChar
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  Users      Users[]
+}
+
 model Lookup_Game {
   id            Int             @id(map: "Lookup_Games_pkey") @default(autoincrement())
   Game          String?
@@ -36,8 +61,6 @@ model Lookup_Game {
   Match_History Match_History[]
 }
 
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model Lookup_PaymentType {
   id         Int      @id @default(autoincrement())
   Type       String?
@@ -45,7 +68,6 @@ model Lookup_PaymentType {
   Users      Users[]
 }
 
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model Lookup_Status {
   id            Int             @id @default(autoincrement())
   Status        String?
@@ -53,8 +75,6 @@ model Lookup_Status {
   Match_History Match_History[]
 }
 
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model Match_History {
   id                            Int            @id(map: "Discord_Threads_pkey") @default(autoincrement())
   Game                          Int?
@@ -74,6 +94,39 @@ model Match_History {
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model PaymentMethod {
+  id                      Int           @id @default(autoincrement())
+  UserId                  Int
+  Provider                String?       @default("paynetworx")
+  ProviderPaymentMethodId String?       @db.VarChar
+  CardLast4               String?       @db.VarChar
+  CardBrand               String?       @db.VarChar
+  CardExpMonth            String?       @db.VarChar
+  CardExpYear             String?       @db.VarChar
+  Active                  Boolean?
+  Verified                Boolean?      @default(false)
+  created_at              DateTime?     @default(now()) @db.Timestamptz(6)
+  updated_at              DateTime?     @db.Timestamptz(6)
+  Users                   Users         @relation(fields: [UserId], references: [id], onDelete: Cascade)
+  Transaction             Transaction[]
+}
+
+model Transaction {
+  id                  Int            @id @default(autoincrement())
+  UserId              Int
+  Type                String         @db.VarChar
+  Amount              Decimal        @db.Decimal
+  Currency            String         @default("USD") @db.VarChar
+  Description         String?        @db.VarChar
+  PaynetworxPaymentId String?        @db.VarChar
+  Paynetworx3DSId     String?        @db.VarChar
+  Status              String         @default("completed") @db.VarChar
+  created_at          DateTime       @default(now()) @db.Timestamptz(6)
+  PaymentMethodId     Int?
+  PaymentMethod       PaymentMethod? @relation(fields: [PaymentMethodId], references: [id], onDelete: Cascade)
+  Users               Users          @relation(fields: [UserId], references: [id], onDelete: Cascade)
+}
+
 model Users {
   id                                        Int                @id(map: "Test-User-Table_pkey") @default(autoincrement())
   Username                                  String?
@@ -97,68 +150,13 @@ model Users {
   Online                                    Boolean?           @default(false)
   Gamertag                                  String?            @db.VarChar
   Games                                     Int[]
+  Console                                   Int?               @default(1)
   Challenges_Challenges_ChallengedIdToUsers Challenges[]       @relation("Challenges_ChallengedIdToUsers")
   Challenges_Challenges_ChallengerIdToUsers Challenges[]       @relation("Challenges_ChallengerIdToUsers")
   Match_History_Match_History_P1ToUsers     Match_History[]    @relation("Match_History_P1ToUsers")
   Match_History_Match_History_P2ToUsers     Match_History[]    @relation("Match_History_P2ToUsers")
   PaymentMethod                             PaymentMethod[]
-  Transactions                              Transaction[]
+  Transaction                               Transaction[]
+  Lookup_Console                            Lookup_Console?    @relation(fields: [Console], references: [id], onDelete: NoAction, onUpdate: NoAction)
   Lookup_PaymentType                        Lookup_PaymentType @relation(fields: [PaymentType], references: [id], onDelete: SetDefault)
-}
-
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model Transaction {
-  id                  Int            @id @default(autoincrement())
-  UserId              Int
-  Type                String         @db.VarChar
-  Amount              Decimal        @db.Decimal
-  Currency            String         @default("USD") @db.VarChar
-  Description         String?        @db.VarChar
-  PaynetworxPaymentId String?        @db.VarChar
-  Paynetworx3DSId     String?        @db.VarChar
-  Status              String         @default("completed") @db.VarChar
-  created_at          DateTime       @default(now()) @db.Timestamptz(6)
-  PaymentMethodId     Int?
-  PaymentMethod       PaymentMethod? @relation(fields: [PaymentMethodId], references: [id], onDelete: Cascade)
-  Users               Users          @relation(fields: [UserId], references: [id], onDelete: Cascade)
-}
-
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model Challenges {
-  id               Int      @id @default(autoincrement())
-  ChallengerId     Int
-  ChallengedId     Int
-  Game             String   @db.VarChar
-  Wager            Decimal  @db.Decimal
-  Status           String   @default("pending") @db.VarChar
-  CreatedAt        DateTime @default(now()) @db.Timestamptz(6)
-  ExpiresAt        DateTime @db.Timestamptz(6)
-  DiscordThreadId  String?  @db.VarChar
-  DiscordThreadUrl String?  @db.VarChar
-  Challenged       Users    @relation("Challenges_ChallengedIdToUsers", fields: [ChallengedId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "Challenges_challengedId_fkey")
-  Challenger       Users    @relation("Challenges_ChallengerIdToUsers", fields: [ChallengerId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "Challenges_challengerId_fkey")
-
-  @@index([ChallengedId], map: "Challenges_challengedId_idx")
-  @@index([ChallengerId], map: "Challenges_challengerId_idx")
-  @@index([CreatedAt], map: "Challenges_createdAt_idx")
-  @@index([Status], map: "Challenges_status_idx")
-}
-
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model PaymentMethod {
-  id                      Int           @id @default(autoincrement())
-  UserId                  Int
-  Provider                String?       @default("paynetworx")
-  ProviderPaymentMethodId String?       @db.VarChar
-  CardLast4               String?       @db.VarChar
-  CardBrand               String?       @db.VarChar
-  CardExpMonth            String?       @db.VarChar
-  CardExpYear             String?       @db.VarChar
-  Active                  Boolean?
-  Verified                Boolean?      @default(false)
-  created_at              DateTime?     @default(now()) @db.Timestamptz(6)
-  updated_at              DateTime?     @db.Timestamptz(6)
-  Users                   Users         @relation(fields: [UserId], references: [id], onDelete: Cascade)
-  Transaction             Transaction[]
 }

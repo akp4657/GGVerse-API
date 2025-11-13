@@ -135,11 +135,22 @@ export const getPotentialOpponents = async (req, res) => {
     const { userId } = req.params;
     const { limit = 10, gameId } = req.query;
     
-    // Get all active players except the current player
+    // Get the player's Console to filter opponents by same Console
+    const player = await prisma.users.findUnique({
+      where: { id: parseInt(userId) },
+      select: { Console: true }
+    });
+
+    if (!player) {
+      return res.status(404).json({ success: false, error: 'Player not found' });
+    }
+    
+    // Get all active players with the same Console except the current player
     const allPlayers = await prisma.users.findMany({
       where: {
         id: { not: parseInt(userId) },
-        Active: true
+        Active: true,
+        Console: player.Console // Filter by same Console
       },
       select: { id: true, Username: true, Avatar: true }
     });

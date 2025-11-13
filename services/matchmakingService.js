@@ -393,11 +393,22 @@ export class MatchmakingService {
 
   // Select top matches for a player
   async selectTopMatches(playerId, limit = 3, gameId = null) {
-    // Get all active players except the current player
+    // Get the player's Console to filter opponents by same Console
+    const player = await prisma.users.findUnique({
+      where: { id: playerId },
+      select: { Console: true }
+    });
+
+    if (!player) {
+      throw new Error('Player not found');
+    }
+
+    // Get all active players with the same Console except the current player
     const allPlayers = await prisma.users.findMany({
       where: {
         id: { not: playerId },
-        Active: true
+        Active: true,
+        Console: player.Console // Filter by same Console
       },
       select: { id: true, Username: true, Avatar: true }
     });

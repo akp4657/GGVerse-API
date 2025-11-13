@@ -110,6 +110,9 @@ app.delete('/user/games/:gameId', userService.authenticateToken, userService.rem
 app.get('/user/games', userService.authenticateToken, userService.getGames);
 app.get('/games', userService.getAllAvailableGames);
 
+// Console management endpoints
+app.get('/consoles', userService.getAllAvailableConsoles);
+
 
 // Wallet endpoints
 app.get('/wallet/balance/:userId', walletService.getWalletBalance);

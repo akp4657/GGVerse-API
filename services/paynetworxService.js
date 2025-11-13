@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { v4 as uuidv4 } from 'uuid';
+import ksuid from 'ksuid';
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
@@ -20,7 +20,7 @@ async function pnxRequest(method, path, data) {
   const headers = {
     Authorization: getAuthHeader(),
     'Content-Type': 'application/json',
-    'Request-ID': uuidv4()
+    'Request-ID': ksuid.randomSync().string
   };
   const resp = await axios({ method, url, data, headers, timeout: REQUEST_TIMEOUT_MS, validateStatus: () => true });
   if (resp.status >= 200 && resp.status < 300) return resp.data;

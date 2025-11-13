@@ -246,6 +246,7 @@ export const getCurrentUser = async (req, res) => {
         Discord: true,
         Avatar: true,
         Gamertag: true,
+        Console: true,
         Authenticated: true,
         Streak: true,
         Earnings: true,
@@ -351,10 +352,25 @@ export const updateUserProfile = async (req, res) => {
       return res.status(401).send({ message: 'User not authenticated' });
     }
 
-    const { Username, Discord, Avatar, Gamertag } = req.body;
+    const { Username, Discord, Avatar, Gamertag, Console } = req.body;
 
+    console.log(req.body);
     // Validate input
     const updateData = {};
+    
+    if (Console !== undefined) {
+      const consoleId = parseInt(Console);
+      // Verify that the console exists in the lookup table
+      const consoleExists = await prisma.Lookup_Console.findUnique({
+        where: { id: consoleId }
+      });
+      
+      if (!consoleExists) {
+        return res.status(400).send({ message: 'Invalid console ID' });
+      }
+      
+      updateData.Console = consoleId;
+    }
     
     if (Username !== undefined) {
       if (typeof Username !== 'string' || Username.trim().length === 0) {
@@ -447,6 +463,7 @@ export const updateUserProfile = async (req, res) => {
         Discord: true,
         Avatar: true,
         Gamertag: true,
+        Console: true,
         Authenticated: true,
         Streak: true,
         Earnings: true,
@@ -888,5 +905,26 @@ export const getAllAvailableGames = async (req, res) => {
   } catch (err) {
     console.error('Error getting available games:', err);
     res.status(500).send({ message: 'Failed to get available games' });
+  }
+};
+
+// Get all available consoles from lookup table
+export const getAllAvailableConsoles = async (req, res) => {
+  try {
+    const consoles = await prisma.Lookup_Console.findMany({
+      select: {
+        id: true,
+        Console: true
+      },
+      orderBy: {
+        Console: 'asc'
+      }
+    });
+
+    console.log(consoles);
+    res.status(200).send(consoles);
+  } catch (err) {
+    console.error('Error getting available consoles:', err);
+    res.status(500).send({ message: 'Failed to get available consoles' });
   }
 };
