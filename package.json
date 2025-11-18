@@ -20,6 +20,7 @@
     "decimal.js": "^10.6.0",
     "dotenv": "^17.1.0",
     "express": "^5.1.0",
+    "geoip-lite": "^1.4.10",
     "jsonwebtoken": "^9.0.2",
     "ksuid": "^3.0.0",
     "multer": "^2.0.2",

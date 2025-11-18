@@ -12,7 +12,10 @@ import * as challengeService from './services/challengeService.js';
 import * as discordThreadService from './services/discordThreadService.js';
 import * as discordService from './services/discordService.js';
 import * as paynetworxService from './services/paynetworxService.js';
+import * as paymentMethodService from './services/paymentMethodService.js';
 import * as cloudinaryService from './services/cloudinaryService.js';
+import { extractClientIP } from './middleware/ipExtractor.js';
+import { geofence } from './middleware/geofence.js';
 import multer from 'multer';
 import cors from 'cors';
 import jwt from 'jsonwebtoken';
@@ -21,16 +24,19 @@ const prisma = new PrismaClient();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+app.set('trust proxy', true);
 app.use(cors());
 app.use(express.json());
+app.use(extractClientIP);
 
 app.get('/', (req, res) => {
+  console.log('Client IP:', req.clientIP);
   res.send('Hello world!');
 });
 
-app.post('/register', userService.registerUser);
+app.post('/register', geofence, userService.registerUser);
 app.get('/verify-email', userService.verifyEmail);
-app.post('/login', userService.login);
+app.post('/login', geofence, userService.login);
 
 // POST /validate-token
 // Validates if a token is still valid
@@ -76,9 +82,9 @@ if (!fs.existsSync(uploadsDir)) {
 
 // User profile endpoints
 app.get('/user/profile', userService.authenticateToken, userService.getCurrentUser);
-app.put('/user/profile', userService.authenticateToken, userService.updateUserProfile);
+app.put('/user/profile', geofence, userService.authenticateToken, userService.updateUserProfile);
 // Avatar upload endpoint with error handling
-app.post('/user/avatar/upload', userService.authenticateToken, (req, res, next) => {
+app.post('/user/avatar/upload', geofence, userService.authenticateToken, (req, res, next) => {
   upload.single('avatar')(req, res, (err) => {
     if (err) {
       // Handle multer errors
@@ -100,14 +106,14 @@ app.get('/users', userService.getUsers);
 app.get('/users/:id', userService.getUserById);
 
 // Rival management endpoints
-app.post('/user/rivals', userService.authenticateToken, userService.addRival);
-app.delete('/user/rivals/:rivalId', userService.authenticateToken, userService.removeRival);
-app.get('/user/rivals', userService.authenticateToken, userService.getRivals);
+app.post('/user/rivals', geofence, userService.authenticateToken, userService.addRival);
+app.delete('/user/rivals/:rivalId', geofence, userService.authenticateToken, userService.removeRival);
+app.get('/user/rivals', geofence, userService.authenticateToken, userService.getRivals);
 
 // Game management endpoints
-app.post('/user/games', userService.authenticateToken, userService.addGame);
-app.delete('/user/games/:gameId', userService.authenticateToken, userService.removeGame);
-app.get('/user/games', userService.authenticateToken, userService.getGames);
+app.post('/user/games', geofence, userService.authenticateToken, userService.addGame);
+app.delete('/user/games/:gameId', geofence, userService.authenticateToken, userService.removeGame);
+app.get('/user/games', geofence, userService.authenticateToken, userService.getGames);
 app.get('/games', userService.getAllAvailableGames);
 
 // Console management endpoints
@@ -115,8 +121,8 @@ app.get('/consoles', userService.getAllAvailableConsoles);
 
 
 // Wallet endpoints
-app.get('/wallet/balance/:userId', walletService.getWalletBalance);
-app.get('/wallet/transactions/:userId', walletService.getTransactionHistory);
+app.get('/wallet/balance/:userId', geofence, walletService.getWalletBalance);
+app.get('/wallet/transactions/:userId', geofence, walletService.getTransactionHistory);
 
 // Matchmaking endpoints
 app.get('/matchmaking/suggestions/:userId', matchmakingController.getMatchSuggestions);
@@ -137,12 +143,12 @@ app.delete('/badges/:id', badgeController.deleteBadge);
 app.post('/badges/earn', badgeController.earnBadge);
 
 // Challenge endpoints
-app.post('/challenges', challengeService.createChallenge);
-app.get('/challenges/user/:userId', challengeService.getUserChallenges);
-app.get('/challenges/:challengeId', challengeService.getChallengeById);
-app.post('/challenges/:challengeId/accept', challengeService.acceptChallenge);
-app.post('/challenges/:challengeId/decline', challengeService.declineChallenge);
-app.delete('/challenges/:challengeId', challengeService.cancelChallenge);
+app.post('/challenges', geofence, challengeService.createChallenge);
+app.get('/challenges/user/:userId', geofence, challengeService.getUserChallenges);
+app.get('/challenges/:challengeId', geofence, challengeService.getChallengeById);
+app.post('/challenges/:challengeId/accept', geofence, challengeService.acceptChallenge);
+app.post('/challenges/:challengeId/decline', geofence, challengeService.declineChallenge);
+app.delete('/challenges/:challengeId', geofence, challengeService.cancelChallenge);
 
 // Discord thread endpoints
 app.post('/api/ggthread', discordThreadService.createDiscordThread);
@@ -167,9 +173,13 @@ app.get('/api/test/email', async (req, res) => {
 });
 
 // PayNetWorx 3DS endpoints (all require authentication)
-app.post('/paynetworx/3ds/initiate', userService.authenticateToken, paynetworxService.initiate3DSAuth);
-app.get('/paynetworx/3ds/method/:tranId', paynetworxService.check3DSMethod);
-app.get('/paynetworx/3ds/challenge/:tranId', paynetworxService.checkChallengeResult);
+app.post('/paynetworx/3ds/initiate', geofence, userService.authenticateToken, paynetworxService.initiate3DSAuth);
+app.get('/paynetworx/3ds/method/:tranId', geofence, paynetworxService.check3DSMethod);
+app.get('/paynetworx/3ds/challenge/:tranId', geofence, paynetworxService.checkChallengeResult);
+
+// Payment method tokenization endpoints (all require authentication)
+app.post('/payment-methods/tokenize/session', geofence, userService.authenticateToken, paymentMethodService.initializeTokenizationSession);
+app.post('/payment-methods/tokenize/save', geofence, userService.authenticateToken, paymentMethodService.saveTokenizedPaymentMethod);
 
 app.listen(PORT, () => {
   console.log(`Server is running on ${PORT}`);
