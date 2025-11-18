@@ -928,3 +928,34 @@ export const getAllAvailableConsoles = async (req, res) => {
     res.status(500).send({ message: 'Failed to get available consoles' });
   }
 };
+
+// Store push token for user
+export const storePushToken = async (req, res) => {
+  try {
+    const userId = req.user.userId || req.user.id;
+    const { pushToken } = req.body;
+
+    if (!pushToken) {
+      return res.status(400).send({ message: 'Push token is required' });
+    }
+
+    // Validate push token format (should start with ExponentPushToken)
+    if (!pushToken.startsWith('ExponentPushToken[') && !pushToken.startsWith('ExpoPushToken[')) {
+      return res.status(400).send({ message: 'Invalid push token format' });
+    }
+
+    // Update user's push token
+    await prisma.Users.update({
+      where: { id: userId },
+      data: { PushToken: pushToken }
+    });
+
+    res.status(200).send({ 
+      message: 'Push token stored successfully',
+      success: true
+    });
+  } catch (err) {
+    console.error('Error storing push token:', err);
+    res.status(500).send({ message: 'Failed to store push token' });
+  }
+};
