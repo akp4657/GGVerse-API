@@ -171,8 +171,6 @@ export const login = async(req, res) => {
                 wallet: user.Wallet,
                 rank: user.Rank,
                 avatar: user.Avatar,
-                createdAt: user.CreatedAt,
-                updatedAt: user.UpdatedAt,
                 authenticated: user.Authenticated,
                 badges: user.Badges,
                 jwt: user.JWT,
