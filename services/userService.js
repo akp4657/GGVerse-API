@@ -176,8 +176,6 @@ export const login = async(req, res) => {
                 authenticated: user.Authenticated,
                 badges: user.Badges,
                 jwt: user.JWT,
-                paypalPayerId: user.PayPalPayerId,
-                stripePayerId: user.StripePayerId
             }
         });
 
@@ -216,8 +214,6 @@ export const verifyEmail = async(req, res) => {
             authenticated: user.Authenticated,
             badges: user.Badges,
             jwt: user.JWT,
-            paypalPayerId: user.PayPalPayerId,
-            stripePayerId: user.StripePayerId
           }});
     } catch(err) {
         console.log(err)
