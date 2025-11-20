@@ -22,6 +22,32 @@ import jwt from 'jsonwebtoken';
 dotenv.config();
 const prisma = new PrismaClient();
 
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  // Don't exit - let the server continue running
+});
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  // Exit gracefully
+  process.exit(1);
+});
+
+// Keep the process alive
+process.on('SIGTERM', async () => {
+  console.log('SIGTERM received, closing server...');
+  await prisma.$disconnect();
+  process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+  console.log('SIGINT received, closing server...');
+  await prisma.$disconnect();
+  process.exit(0);
+});
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 app.set('trust proxy', true);
@@ -124,6 +150,7 @@ app.get('/consoles', userService.getAllAvailableConsoles);
 // Wallet endpoints
 app.get('/wallet/balance/:userId', geofence, walletService.getWalletBalance);
 app.get('/wallet/transactions/:userId', geofence, walletService.getTransactionHistory);
+app.post('/add-funds', geofence, userService.authenticateToken, walletService.addFunds);
 
 // Matchmaking endpoints
 app.get('/matchmaking/suggestions/:userId', matchmakingController.getMatchSuggestions);
@@ -182,6 +209,28 @@ app.get('/paynetworx/3ds/challenge/:tranId', geofence, paynetworxService.checkCh
 app.post('/payment-methods/tokenize/session', geofence, userService.authenticateToken, paymentMethodService.initializeTokenizationSession);
 app.post('/payment-methods/tokenize/save', geofence, userService.authenticateToken, paymentMethodService.saveTokenizedPaymentMethod);
 
-app.listen(PORT, () => {
+// Payment method management endpoints (all require authentication)
+app.get('/payment-methods', geofence, userService.authenticateToken, paymentMethodService.getUserPaymentMethods);
+app.put('/payment-methods/:paymentMethodId/default', geofence, userService.authenticateToken, paymentMethodService.setDefaultPaymentMethod);
+app.delete('/payment-methods/:paymentMethodId', geofence, userService.authenticateToken, paymentMethodService.deletePaymentMethod);
+
+// Combined verification + tokenization flow (requires authentication)
+app.post('/payment-methods/verify-and-tokenize', geofence, userService.authenticateToken, paymentMethodService.verifyAndTokenizeCard);
+
+// Payment processing with saved tokens (requires authentication)
+app.post('/paynetworx/payment', geofence, userService.authenticateToken, paynetworxService.processPaymentWithToken);
+
+// Withdrawal endpoint (requires authentication)
+app.post('/paynetworx/withdraw', geofence, userService.authenticateToken, paynetworxService.processWithdrawal);
+
+const server = app.listen(PORT, () => {
   console.log(`Server is running on ${PORT}`);
+});
+
+server.on('error', (error) => {
+  console.error('Server error:', error);
+  if (error.code === 'EADDRINUSE') {
+    console.error(`Port ${PORT} is already in use`);
+    process.exit(1);
+  }
 });

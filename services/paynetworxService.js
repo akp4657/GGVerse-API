@@ -202,4 +202,171 @@ export const checkChallengeResult = async (req, res) => {
   }
 };
 
+// Step 2: Payment Processing with Tokens - Process payment using saved PayNetWorx token
+export const processPaymentWithToken = async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+    if (!userId) return res.status(401).send({ error: 'User authentication required' });
+
+    const { paymentMethodId, amount, currency = 'USD', description } = req.body;
+    if (!paymentMethodId || !amount) {
+      return res.status(400).send({ error: 'paymentMethodId and amount are required' });
+    }
+
+    // Step 1: Look up PaymentMethod by ID and verify it belongs to user
+    const paymentMethod = await prisma.paymentMethod.findFirst({
+      where: {
+        id: parseInt(paymentMethodId),
+        UserId: parseInt(userId),
+        Active: true,
+        Provider: 'paynetworx'
+      }
+    });
+
+    if (!paymentMethod || !paymentMethod.ProviderPaymentMethodId) {
+      return res.status(404).send({ error: 'Payment method not found or invalid' });
+    }
+
+    // Step 2: Create payment request using token
+    // Note: PayNetWorx token payment structure - using 3DS API with token
+    const paymentRequest = {
+      Amount: {
+        Total: String(amount),
+        Fee: '0.00',
+        Tax: '0.00',
+        Currency: currency.toUpperCase()
+      },
+      PaymentMethod: {
+        Token: {
+          TokenValue: paymentMethod.ProviderPaymentMethodId
+        }
+      },
+      Attributes: {
+        EntryMode: 'token',
+        ProcessingSpecifiers: { InitiatedByECommerce: true }
+      },
+      TransactionEntry: {
+        Device: 'NA',
+        DeviceVersion: 'NA',
+        Application: 'GGVerse API',
+        ApplicationVersion: '1.0',
+        Timestamp: new Date().toISOString()
+      },
+      Detail: {
+        MerchantData: {}
+      }
+    };
+
+    // Step 3: Process payment via PayNetWorx 3DS API
+    const pnx = await pnxRequest('post', '/transaction/auth', paymentRequest);
+
+    // Step 4: Create transaction record
+    const trx = await prisma.transaction.create({
+      data: {
+        UserId: parseInt(userId),
+        Type: 'deposit',
+        Amount: Number(amount),
+        Currency: currency.toUpperCase(),
+        Description: description || 'Deposit via PayNetWorx token',
+        PaynetworxPaymentId: pnx.TransactionID || null,
+        Paynetworx3DSId: pnx.threeDSServerTransID || null,
+        PaymentMethodId: parseInt(paymentMethodId),
+        Status: pnx.PaymentResponse?.Response?.Approved || pnx.Approved ? 'completed' : 'failed'
+      }
+    });
+
+    // Step 5: If approved, increment user wallet
+    const approved = Boolean(pnx.PaymentResponse?.Response?.Approved) || Boolean(pnx.Approved);
+    if (approved) {
+      await prisma.users.update({
+        where: { id: parseInt(userId) },
+        data: { Wallet: { increment: Number(amount) } }
+      });
+    }
+
+    return res.json({
+      success: approved,
+      transactionId: trx.id,
+      paymentResponse: pnx,
+      amount: Number(amount),
+      currency: currency.toUpperCase()
+    });
+  } catch (e) {
+    if (e.response) return res.status(e.response.status || 500).send(e.response.data || { error: 'Payment processing failed' });
+    return res.status(500).send({ error: e.message });
+  }
+};
+
+// Withdrawal - Process withdrawal request (payout to user's bank account)
+export const processWithdrawal = async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+    if (!userId) return res.status(401).send({ error: 'User authentication required' });
+
+    const { amount, currency = 'USD', description, bankAccount } = req.body;
+    if (!amount || amount <= 0) {
+      return res.status(400).send({ error: 'Valid amount is required' });
+    }
+
+    // Step 1: Get user and verify balance
+    const user = await prisma.users.findUnique({
+      where: { id: parseInt(userId) },
+      select: { id: true, Wallet: true, Username: true, Email: true }
+    });
+
+    if (!user) {
+      return res.status(404).send({ error: 'User not found' });
+    }
+
+    const withdrawalAmount = Number(amount);
+    const currentBalance = Number(user.Wallet || 0);
+
+    if (withdrawalAmount > currentBalance) {
+      return res.status(400).send({ 
+        error: 'Insufficient balance',
+        currentBalance,
+        requestedAmount: withdrawalAmount
+      });
+    }
+
+    // Step 2: Create withdrawal transaction (status: pending)
+    const trx = await prisma.transaction.create({
+      data: {
+        UserId: parseInt(userId),
+        Type: 'withdrawal',
+        Amount: withdrawalAmount,
+        Currency: currency.toUpperCase(),
+        Description: description || 'Withdrawal request',
+        Status: 'pending' // Will be updated when payout is processed
+      }
+    });
+
+    // Step 3: Decrement wallet balance immediately (or keep pending - depends on business logic)
+    // For now, we'll decrement immediately and mark transaction as pending
+    // If payout fails, we can reverse this
+    await prisma.users.update({
+      where: { id: parseInt(userId) },
+      data: { Wallet: { decrement: withdrawalAmount } }
+    });
+
+    // Step 4: Process payout via PayNetWorx (if payout API available)
+    // Note: PayNetWorx payout API details need to be confirmed
+    // For now, we'll create the transaction and mark it pending
+    // TODO: Integrate with PayNetWorx payout API when available
+    // Example structure (to be confirmed with PayNetWorx):
+
+    return res.json({
+      success: true,
+      transactionId: trx.id,
+      amount: withdrawalAmount,
+      currency: currency.toUpperCase(),
+      newBalance: currentBalance - withdrawalAmount,
+      status: 'pending',
+      message: 'Withdrawal request created. Processing payout...'
+    });
+  } catch (e) {
+    if (e.response) return res.status(e.response.status || 500).send(e.response.data || { error: 'Withdrawal processing failed' });
+    return res.status(500).send({ error: e.message });
+  }
+};
 

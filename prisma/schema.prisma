@@ -107,8 +107,12 @@ model PaymentMethod {
   Verified                Boolean?      @default(false)
   created_at              DateTime?     @default(now()) @db.Timestamptz(6)
   updated_at              DateTime?     @db.Timestamptz(6)
+  IsDefault               Boolean?
   Users                   Users         @relation(fields: [UserId], references: [id], onDelete: Cascade)
   Transaction             Transaction[]
+  
+  @@index([UserId])
+  @@index([ProviderPaymentMethodId])
 }
 
 model Transaction {

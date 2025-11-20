@@ -13,7 +13,7 @@ export const geofence = (req, res, next) => {
   const region = geo?.region || 'Unknown';
   const city = geo?.city || 'Unknown';
   
-  console.log('Geofence check - IP:', clientIP, '| Country:', country, '| Region:', region, '| City:', city);
+  //console.log('Geofence check - IP:', clientIP, '| Country:', country, '| Region:', region, '| City:', city);
   const regionBlacklist = [
     'AL',
     'AK',

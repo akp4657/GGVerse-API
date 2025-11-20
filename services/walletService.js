@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import Decimal from 'decimal.js';
+import * as paynetworxService from './paynetworxService.js';
 
 const prisma = new PrismaClient();
 
@@ -91,10 +92,10 @@ export const getTransactionHistory = async (req, res) => {
         Amount: true,
         Currency: true,
         Description: true,
+        PaynetworxPaymentId: true,
+        Paynetworx3DSId: true,
         Status: true,
         created_at: true,
-        StripePaymentIntentId: true,
-        StripePayoutId: true
       }
     });
 
@@ -119,8 +120,8 @@ export const getTransactionHistory = async (req, res) => {
         description: t.Description,
         status: t.Status,
         created_at: t.created_at.toISOString(),
-        stripePaymentIntentId: t.StripePaymentIntentId,
-        stripePayoutId: t.StripePayoutId
+        paynetworxPaymentId: t.PaynetworxPaymentId,
+        paynetworx3DSId: t.Paynetworx3DSId
       })),
       pagination: {
         currentPage: pageNum,
@@ -134,5 +135,49 @@ export const getTransactionHistory = async (req, res) => {
   } catch (err) {
     console.error('Error getting transaction history:', err);
     res.status(500).send({ error: 'Failed to get transaction history' });
+  }
+};
+
+// Add funds to user wallet - supports PayNetWorx tokens via paymentMethodId
+export const addFunds = async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+    if (!userId) return res.status(401).send({ error: 'User authentication required' });
+
+    const { amount, currency = 'USD', paymentMethodId, description } = req.body;
+    
+    if (!amount || amount <= 0) {
+      return res.status(400).send({ error: 'Valid amount is required' });
+    }
+
+    // If paymentMethodId is provided, use saved PayNetWorx token
+    if (paymentMethodId) {
+      // Forward to processPaymentWithToken by updating req.body
+      // processPaymentWithToken expects: paymentMethodId, amount, currency, description
+      const originalBody = { ...req.body };
+      req.body.paymentMethodId = parseInt(paymentMethodId);
+      req.body.amount = String(amount);
+      req.body.currency = currency;
+      req.body.description = description || 'Add funds to wallet';
+      
+      // Call processPaymentWithToken - it handles the payment and wallet increment
+      // Restore original body after call (though res will be sent, so this is just cleanup)
+      try {
+        console.log('Processing payment with token:', req.body);
+        return await paynetworxService.processPaymentWithToken(req, res);
+      } finally {
+        req.body = originalBody;
+      }
+    }
+
+    // If no paymentMethodId, return error - user must provide a payment method
+    // In the future, this could fall back to 3DS flow or other payment methods
+    return res.status(400).send({ 
+      error: 'paymentMethodId is required',
+      message: 'Please provide a saved payment method ID or use the 3DS flow to add funds'
+    });
+  } catch (err) {
+    console.error('Error adding funds:', err);
+    res.status(500).send({ error: 'Failed to add funds' });
   }
 }; 
