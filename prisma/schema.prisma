@@ -110,7 +110,7 @@ model PaymentMethod {
   IsDefault               Boolean?
   Users                   Users         @relation(fields: [UserId], references: [id], onDelete: Cascade)
   Transaction             Transaction[]
-  
+
   @@index([UserId])
   @@index([ProviderPaymentMethodId])
 }
