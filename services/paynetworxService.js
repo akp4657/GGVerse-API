@@ -5,6 +5,8 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 const THREE_DS_BASE_URL = process.env.PAYNETWORX_3DS_API_URL?.replace(/\/$/, '') || '';
+// Payment API URL for ACH and other payment operations (not 3DS)
+const PAYMENT_API_URL = process.env.PAYNETWORX_PAYMENT_API_URL?.replace(/\/$/, '') || process.env.PAYNETWORX_HOSTED_PAYMENTS_API_URL?.replace(/\/$/, '') || process.env.PAYNETWORX_3DS_API_URL?.replace(/\/$/, '') || '';
 const ACCESS_TOKEN_USER = process.env.PAYNETWORX_ACCESS_TOKEN_USER || process.env.PAYNETWORX_USERNAME;
 const ACCESS_TOKEN_PASSWORD = process.env.PAYNETWORX_ACCESS_TOKEN_PASSWORD || process.env.PAYNETWORX_PASSWORD;
 const REQUEST_TIMEOUT_MS = Number(process.env.PAYNETWORX_REQUEST_TIMEOUT_MS || 15000);
@@ -15,7 +17,8 @@ function getAuthHeader() {
   return `Basic ${btoa(`${ACCESS_TOKEN_USER}:${ACCESS_TOKEN_PASSWORD}`)}`;
 }
 
-async function pnxRequest(method, path, data) {
+// Request helper for 3DS API endpoints
+async function pnx3DSRequest(method, path, data) {
   const url = `${THREE_DS_BASE_URL}${path}`;
   const headers = {
     Authorization: getAuthHeader(),
@@ -25,6 +28,24 @@ async function pnxRequest(method, path, data) {
   const resp = await axios({ method, url, data, headers, timeout: REQUEST_TIMEOUT_MS, validateStatus: () => true });
   if (resp.status >= 200 && resp.status < 300) return resp.data;
   const err = new Error(`PayNetWorx error ${resp.status}`);
+  err.response = resp;
+  throw err;
+}
+
+// Request helper for Payment API endpoints (ACH, etc.)
+async function pnxPaymentRequest(method, path, data) {
+  if (!PAYMENT_API_URL) {
+    throw new Error('PayNetWorx Payment API URL not configured. Set PAYNETWORX_PAYMENT_API_URL or PAYNETWORX_HOSTED_PAYMENTS_API_URL');
+  }
+  const url = `${PAYMENT_API_URL}${path}`;
+  const headers = {
+    Authorization: getAuthHeader(),
+    'Content-Type': 'application/json',
+    'Request-ID': ksuid.randomSync().string
+  };
+  const resp = await axios({ method, url, data, headers, timeout: REQUEST_TIMEOUT_MS, validateStatus: () => true });
+  if (resp.status >= 200 && resp.status < 300) return resp.data;
+  const err = new Error(`PayNetWorx Payment API error ${resp.status}`);
   err.response = resp;
   throw err;
 }
@@ -72,7 +93,7 @@ export const initiate3DSAuth = async (req, res) => {
       ThreedsData: Object.assign({ deviceChannel: '02', threeDSRequestorURL: APP_URL }, browser_info || {})
     };
 
-    const pnx = await pnxRequest('post', '/transaction/auth', authRequest);
+    const pnx = await pnx3DSRequest('post', '/transaction/auth', authRequest);
 
     // Record pending transaction
     const trx = await prisma.transaction.create({
@@ -112,7 +133,6 @@ export const initiate3DSAuth = async (req, res) => {
       });
     }
 
-    // Frictionless — mark completed and increment wallet
     await prisma.users.update({ where: { id: parseInt(userId) }, data: { Wallet: { increment: Number(amount) } } });
     await prisma.transaction.update({ where: { id: trx.id }, data: { Status: 'completed' } });
 
@@ -129,7 +149,7 @@ export const check3DSMethod = async (req, res) => {
   try {
     const { tranId } = req.params;
     if (!tranId) return res.status(400).send({ error: 'tranId is required' });
-    const pnx = await pnxRequest('get', `/transaction/auth/${tranId}/3ds_method`);
+    const pnx = await pnx3DSRequest('get', `/transaction/auth/${tranId}/3ds_method`);
 
     if (pnx.challengeData) {
       return res.json({
@@ -258,7 +278,7 @@ export const processPaymentWithToken = async (req, res) => {
     };
 
     // Step 3: Process payment via PayNetWorx 3DS API
-    const pnx = await pnxRequest('post', '/transaction/auth', paymentRequest);
+    const pnx = await pnx3DSRequest('post', '/transaction/auth', paymentRequest);
 
     // Step 4: Create transaction record
     const trx = await prisma.transaction.create({
@@ -297,18 +317,61 @@ export const processPaymentWithToken = async (req, res) => {
   }
 };
 
-// Withdrawal - Process withdrawal request (payout to user's bank account)
+// Helper function to get tomorrow's date in YYYY-MM-DD format
+function getTomorrowDate() {
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return tomorrow.toISOString().split('T')[0];
+}
+
+// Helper function to get available balance (wallet - escrow)
+async function getAvailableBalance(userId) {
+  const user = await prisma.users.findUnique({
+    where: { id: userId },
+    select: { Wallet: true }
+  });
+  
+  if (!user) return 0;
+  
+  // Check if ChallengeEscrow model exists (may not be migrated yet)
+  try {
+    const totalEscrow = await prisma.challengeEscrow.aggregate({
+      where: {
+        UserId: userId,
+        Status: 'locked'
+      },
+      _sum: { Amount: true }
+    });
+    
+    const available = Number(user.Wallet || 0) - Number(totalEscrow._sum.Amount || 0);
+    return Math.max(0, available);
+  } catch (error) {
+    // ChallengeEscrow table doesn't exist yet, just return wallet balance
+    return Number(user.Wallet || 0);
+  }
+}
+
+// Withdrawal - Process withdrawal request (payout to user's bank account via ACH Credit)
 export const processWithdrawal = async (req, res) => {
+  let transaction = null;
+  
   try {
     const userId = req.user?.userId || req.user?.id;
     if (!userId) return res.status(401).send({ error: 'User authentication required' });
 
-    const { amount, currency = 'USD', description, bankAccount } = req.body;
+    const { 
+      amount, 
+      currency = 'USD', 
+      description, 
+      bankAccountId,  // Optional: if user has saved bank account token
+      bankAccount     // Required if no bankAccountId
+    } = req.body;
+    
     if (!amount || amount <= 0) {
       return res.status(400).send({ error: 'Valid amount is required' });
     }
 
-    // Step 1: Get user and verify balance
+    // Step 1: Get user and calculate available balance
     const user = await prisma.users.findUnique({
       where: { id: parseInt(userId) },
       select: { id: true, Wallet: true, Username: true, Email: true }
@@ -319,53 +382,225 @@ export const processWithdrawal = async (req, res) => {
     }
 
     const withdrawalAmount = Number(amount);
-    const currentBalance = Number(user.Wallet || 0);
+    const availableBalance = await getAvailableBalance(parseInt(userId));
 
-    if (withdrawalAmount > currentBalance) {
+    // Step 2: Validate sufficient balance
+    if (withdrawalAmount > availableBalance) {
+      const currentBalance = Number(user.Wallet || 0);
+      const escrowedAmount = currentBalance - availableBalance;
+      
       return res.status(400).send({ 
-        error: 'Insufficient balance',
+        error: 'Insufficient available balance',
+        availableBalance,
+        requestedAmount: withdrawalAmount,
         currentBalance,
-        requestedAmount: withdrawalAmount
+        escrowedAmount: escrowedAmount > 0 ? escrowedAmount : 0
       });
     }
 
-    // Step 2: Create withdrawal transaction (status: pending)
-    const trx = await prisma.transaction.create({
+    // Step 3: Validate bank account information
+    let achData = null;
+    
+    if (bankAccountId) {
+      // Use saved bank account token (if BankAccount model exists)
+      try {
+        const bankAccountToken = await prisma.bankAccount.findFirst({
+          where: { 
+            id: parseInt(bankAccountId), 
+            UserId: parseInt(userId), 
+            Active: true 
+          }
+        });
+        
+        if (!bankAccountToken || !bankAccountToken.ProviderBankAccountId) {
+          return res.status(404).send({ error: 'Bank account not found or invalid' });
+        }
+        
+        achData = {
+          Token: { TokenID: bankAccountToken.ProviderBankAccountId },
+          ACH: {
+            AchAccountType: bankAccountToken.AccountType,
+            CustomerName: bankAccountToken.AccountHolderName,
+            EffectiveDate: getTomorrowDate()
+          }
+        };
+      } catch (error) {
+        // BankAccount model doesn't exist yet
+        return res.status(400).send({ 
+          error: 'Bank account tokenization not yet available. Please provide bank account details.' 
+        });
+      }
+    } else {
+      // Use provided bank account details
+      if (!bankAccount || !bankAccount.routingNumber || !bankAccount.accountNumber || 
+          !bankAccount.accountType || !bankAccount.accountHolderName) {
+        return res.status(400).send({ 
+          error: 'Bank account information is required',
+          requiredFields: ['routingNumber', 'accountNumber', 'accountType', 'accountHolderName']
+        });
+      }
+      
+      // Validate routing number (must be 9 digits)
+      if (!/^\d{9}$/.test(bankAccount.routingNumber)) {
+        return res.status(400).send({ error: 'Invalid routing number. Must be 9 digits.' });
+      }
+      
+      // Validate account type
+      const validAccountTypes = ['PersonalChecking', 'PersonalSavings', 'BusinessChecking', 'BusinessSavings'];
+      if (!validAccountTypes.includes(bankAccount.accountType)) {
+        return res.status(400).send({ 
+          error: 'Invalid account type',
+          validTypes: validAccountTypes
+        });
+      }
+      
+      achData = {
+        ACH: {
+          BankRoutingNumber: bankAccount.routingNumber,
+          AccountNumber: bankAccount.accountNumber,
+          AchAccountType: bankAccount.accountType,
+          CustomerName: bankAccount.accountHolderName,
+          CustomerIdentifier: userId.toString(),
+          EffectiveDate: getTomorrowDate()
+        }
+      };
+      
+      // If tokenize requested, add DataAction
+      if (bankAccount.tokenize) {
+        achData.DataAction = 'token/add';
+      }
+    }
+
+    // Step 4: Create withdrawal transaction (status: pending)
+    transaction = await prisma.transaction.create({
       data: {
         UserId: parseInt(userId),
         Type: 'withdrawal',
         Amount: withdrawalAmount,
         Currency: currency.toUpperCase(),
-        Description: description || 'Withdrawal request',
-        Status: 'pending' // Will be updated when payout is processed
+        Description: description || 'Withdrawal to bank account',
+        Status: 'pending'
       }
     });
 
-    // Step 3: Decrement wallet balance immediately (or keep pending - depends on business logic)
-    // For now, we'll decrement immediately and mark transaction as pending
-    // If payout fails, we can reverse this
+    // Step 5: Decrement wallet balance
     await prisma.users.update({
       where: { id: parseInt(userId) },
       data: { Wallet: { decrement: withdrawalAmount } }
     });
 
-    // Step 4: Process payout via PayNetWorx (if payout API available)
-    // Note: PayNetWorx payout API details need to be confirmed
-    // For now, we'll create the transaction and mark it pending
-    // TODO: Integrate with PayNetWorx payout API when available
-    // Example structure (to be confirmed with PayNetWorx):
+    // Step 6: Call PayNetWorx ACH Credit API
+    // Format amount with exactly 2 decimal places for currency validation
+    const formattedAmount = Number(withdrawalAmount).toFixed(2);
+    const achCreditRequest = {
+      Amount: {
+        Total: formattedAmount,
+        Currency: currency.toUpperCase()
+      },
+      PaymentMethod: achData,
+      TransactionEntry: {
+        Device: 'NA',
+        DeviceVersion: 'NA',
+        Application: 'GGVerse API',
+        ApplicationVersion: '1.0',
+        Timestamp: new Date().toISOString()
+      },
+      Detail: {
+        MerchantData: {
+          MerchantDefinedKey1: `withdrawal_${transaction.id}`,
+          MerchantDefinedKey2: userId.toString()
+        }
+      }
+    };
 
-    return res.json({
-      success: true,
-      transactionId: trx.id,
-      amount: withdrawalAmount,
-      currency: currency.toUpperCase(),
-      newBalance: currentBalance - withdrawalAmount,
-      status: 'pending',
-      message: 'Withdrawal request created. Processing payout...'
-    });
+    const pnxResponse = await pnxPaymentRequest('post', '/transaction/achcredit', achCreditRequest);
+
+    // Step 7: Handle response
+    const approved = pnxResponse.Approved === true;
+
+    if (approved) {
+      // Update transaction status
+      await prisma.transaction.update({
+        where: { id: transaction.id },
+        data: {
+          Status: 'completed',
+          PaynetworxPaymentId: pnxResponse.TransactionID
+        }
+      });
+
+      // If tokenization was requested and token returned, save it
+      if (bankAccount && bankAccount.tokenize && pnxResponse.Token?.TokenID) {
+        try {
+          await prisma.bankAccount.create({
+            data: {
+              UserId: parseInt(userId),
+              Provider: 'paynetworx',
+              ProviderBankAccountId: pnxResponse.Token.TokenID,
+              AccountType: bankAccount.accountType,
+              AccountHolderName: bankAccount.accountHolderName,
+              AccountLast4: bankAccount.accountNumber.slice(-4),
+              Active: true,
+              IsDefault: false
+            }
+          });
+        } catch (error) {
+          // BankAccount model doesn't exist yet, just log
+          console.log('Bank account tokenization skipped - model not available:', error.message);
+        }
+      }
+
+      return res.json({
+        success: true,
+        transactionId: transaction.id,
+        amount: withdrawalAmount,
+        currency: currency.toUpperCase(),
+        newBalance: availableBalance - withdrawalAmount,
+        status: 'completed',
+        paynetworxTransactionId: pnxResponse.TransactionID,
+        message: 'Withdrawal processed successfully'
+      });
+    } else {
+      // Payment failed - reverse wallet decrement
+      await prisma.users.update({
+        where: { id: parseInt(userId) },
+        data: { Wallet: { increment: withdrawalAmount } }
+      });
+
+      await prisma.transaction.update({
+        where: { id: transaction.id },
+        data: { Status: 'failed' }
+      });
+
+      return res.status(400).send({
+        error: 'Withdrawal failed',
+        message: pnxResponse.ResponseText || 'ACH credit request was not approved',
+        transactionId: transaction.id
+      });
+    }
   } catch (e) {
-    if (e.response) return res.status(e.response.status || 500).send(e.response.data || { error: 'Withdrawal processing failed' });
+    // If wallet was decremented but API call failed, reverse it
+    if (transaction && transaction.Status === 'pending') {
+      try {
+        await prisma.users.update({
+          where: { id: parseInt(req.user?.userId || req.user?.id) },
+          data: { Wallet: { increment: Number(req.body.amount) } }
+        });
+        await prisma.transaction.update({
+          where: { id: transaction.id },
+          data: { Status: 'failed' }
+        });
+      } catch (reversalError) {
+        console.error('Error reversing withdrawal:', reversalError);
+      }
+    }
+
+    // Log detailed error for debugging
+    console.error('PayNetWorx ACH Credit Error:', e.response?.data || e.message);
+    if (e.response) {
+      console.error('Response Status:', e.response.status);
+      console.error('Response Data:', JSON.stringify(e.response.data, null, 2));
+      return res.status(e.response.status || 500).send(e.response.data || { error: 'Withdrawal processing failed' });
+    }
     return res.status(500).send({ error: e.message });
   }
 };

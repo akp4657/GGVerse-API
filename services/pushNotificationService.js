@@ -10,7 +10,6 @@ import axios from 'axios';
  */
 export const sendPushNotification = async (expoPushToken, title, body, data = {}) => {
   if (!expoPushToken) {
-    console.log('No push token provided, skipping notification');
     return null;
   }
 
@@ -37,7 +36,6 @@ export const sendPushNotification = async (expoPushToken, title, body, data = {}
     
     // Check if notification was sent successfully
     if (result.data && result.data.status === 'ok') {
-      console.log('Push notification sent successfully:', result);
       return { success: true, result };
     } else {
       console.error('Failed to send push notification:', result);
@@ -59,7 +57,6 @@ export const sendPushNotification = async (expoPushToken, title, body, data = {}
  */
 export const sendPushNotificationToMultiple = async (expoPushTokens, title, body, data = {}) => {
   if (!expoPushTokens || expoPushTokens.length === 0) {
-    console.log('No push tokens provided, skipping notification');
     return null;
   }
 
@@ -67,7 +64,6 @@ export const sendPushNotificationToMultiple = async (expoPushTokens, title, body
   const validTokens = expoPushTokens.filter(token => token);
 
   if (validTokens.length === 0) {
-    console.log('No valid push tokens provided');
     return null;
   }
 
@@ -91,7 +87,6 @@ export const sendPushNotificationToMultiple = async (expoPushTokens, title, body
     });
 
     const result = response.data;
-    console.log('Push notifications sent to multiple devices:', result);
     return { success: true, result };
   } catch (error) {
     console.error('Error sending push notifications to multiple devices:', error.response?.data || error.message);

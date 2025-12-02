@@ -56,7 +56,6 @@ app.use(express.json());
 app.use(extractClientIP);
 
 app.get('/', (req, res) => {
-  console.log('Client IP:', req.clientIP);
   res.send('Hello world!');
 });
 

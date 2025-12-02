@@ -10,7 +10,6 @@ export const createChallenge = async (req, res) => {
   try {
     const { challengerId, challengedId, game, wager } = req.body;
 
-    console.log(req.body)
     // Validate required fields
     if (!challengerId || !challengedId || !game || !wager) {
       return res.status(400).json({ 
@@ -201,8 +200,6 @@ export const acceptChallenge = async (req, res) => {
   try {
     const { challengeId } = req.params;
     const { userId } = req.body;
-
-    console.log(challengeId, userId);
 
     const challenge = await prisma.challenges.findUnique({
       where: { id: parseInt(challengeId) },

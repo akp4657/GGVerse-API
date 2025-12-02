@@ -163,7 +163,6 @@ export const addFunds = async (req, res) => {
       // Call processPaymentWithToken - it handles the payment and wallet increment
       // Restore original body after call (though res will be sent, so this is just cleanup)
       try {
-        console.log('Processing payment with token:', req.body);
         return await paynetworxService.processPaymentWithToken(req, res);
       } finally {
         req.body = originalBody;

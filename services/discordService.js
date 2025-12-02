@@ -62,7 +62,6 @@ export const getOAuthUrl = async (req, res) => {
  */
 export const handleOAuthCallback = async (req, res) => {
   try {
-    console.log('handleOAuthCallback');
     const { code, state } = req.query;
     
     if (!code || !state) {
@@ -142,8 +141,6 @@ export const handleOAuthCallback = async (req, res) => {
       }
     });
 
-    console.log('existingUser', existingUser);
-
     if (existingUser) {
       return res.status(400).send({ 
         message: 'This Discord account is already linked to another user' 
@@ -163,7 +160,6 @@ export const handleOAuthCallback = async (req, res) => {
       }
     });
 
-    console.log('updatedUser', updatedUser);
     // Automatically create Discord server invite and DM user if configured
     if (DISCORD_SERVER_ID) {
       try {
@@ -174,19 +170,17 @@ export const handleOAuthCallback = async (req, res) => {
         );
         
         if (inviteResult.success) {
-          console.log(`Successfully sent Discord server invite to ${discordUsername}: ${inviteResult.inviteUrl}`);
+          // Successfully sent Discord server invite
         } else {
           console.error(`Failed to send Discord server invite:`, inviteResult.error);
           // If DM fails but invite was created, send email instead
           if (inviteResult.inviteUrl) {
-            console.log(`Sending Discord invite via email to ${updatedUser.Username}`);
             try {
               await emailService.sendDiscordInviteEmail(
                 updatedUser.Email,
                 updatedUser.Username,
                 inviteResult.inviteUrl
               );
-              console.log(`Discord invite email sent successfully to ${updatedUser.Username}`);
             } catch (emailError) {
               console.error(`Failed to send Discord invite email:`, emailError);
             }
@@ -472,7 +466,6 @@ const createDiscordServerInviteAndDM = async (guildId, userId, username) => {
       };
     }
 
-    console.log(`Successfully sent Discord server invite to user ${username} (${userId})`);
     return { 
       success: true, 
       message: `Discord server invite sent to ${username}`,

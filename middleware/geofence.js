@@ -7,8 +7,7 @@ export const geofence = (req, res, next) => {
     return res.status(400).send({ error: 'Unable to determine client IP' });
   }
 
-  const geo = geoip.lookup('98.10.249.53');
-  console.log(geo);
+  const geo = geoip.lookup(clientIP);
   const country = geo?.country || 'Unknown';
   const region = geo?.region || 'Unknown';
   const city = geo?.city || 'Unknown';
