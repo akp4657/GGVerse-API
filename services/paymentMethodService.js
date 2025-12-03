@@ -426,10 +426,21 @@ export const getUserBankAccounts = async (req, res) => {
     const userId = req.user?.userId || req.user?.id;
     if (!userId) return res.status(401).send({ error: 'User authentication required' });
 
+    // Fetch all active bank accounts for user (exclude tokens, return metadata only)
     const bankAccounts = await prisma.bankAccount.findMany({
       where: {
         UserId: parseInt(userId),
         Active: true
+      },
+      select: {
+        id: true,
+        AccountLast4: true,
+        AccountType: true,
+        AccountName: true,
+        RoutingLast4: true,
+        IsDefault: true,
+        Provider: true,
+        created_at: true
       },
       orderBy: [
         { IsDefault: 'desc' },
@@ -443,16 +454,15 @@ export const getUserBankAccounts = async (req, res) => {
         id: ba.id,
         accountLast4: ba.AccountLast4,
         accountType: ba.AccountType,
-        accountName: ba.AccountName || ba.AccountHolderName, // Support both field names
+        accountName: ba.AccountName,
         routingLast4: ba.RoutingLast4,
         isDefault: ba.IsDefault || false,
         provider: ba.Provider,
         createdAt: ba.created_at
       }))
     });
-  } catch (error) {
-    console.error('Error fetching bank accounts:', error);
-    return res.status(500).send({ error: 'Failed to fetch bank accounts' });
+  } catch (e) {
+    return res.status(500).send({ error: e.message });
   }
 };
 
