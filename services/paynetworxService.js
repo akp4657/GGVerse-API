@@ -8,21 +8,38 @@ const THREE_DS_BASE_URL = process.env.PAYNETWORX_3DS_API_URL?.replace(/\/$/, '')
 // Payment API URL for ACH and other payment operations (not 3DS)
 const PAYMENT_API_URL = process.env.PAYNETWORX_PAYMENT_API_URL?.replace(/\/$/, '') || process.env.PAYNETWORX_HOSTED_PAYMENTS_API_URL?.replace(/\/$/, '') || process.env.PAYNETWORX_3DS_API_URL?.replace(/\/$/, '') || '';
 const HOSTED_PAYMENTS_API_KEY = process.env.PAYNETWORX_HOSTED_PAYMENTS_API_KEY;
+const FORCE_BASIC_AUTH = process.env.PAYNETWORX_FORCE_BASIC_AUTH === 'true';
 const ACCESS_TOKEN_USER = process.env.PAYNETWORX_ACCESS_TOKEN_USER || process.env.PAYNETWORX_USERNAME;
 const ACCESS_TOKEN_PASSWORD = process.env.PAYNETWORX_ACCESS_TOKEN_PASSWORD || process.env.PAYNETWORX_PASSWORD;
 const REQUEST_TIMEOUT_MS = Number(process.env.PAYNETWORX_REQUEST_TIMEOUT_MS || 15000);
 const APP_URL = process.env.APP_URL || 'http://localhost:3000';
 
 function getAuthHeader() {
-  // Check for Hosted Payments API key first (if available)
-  // For Hosted Payments API, use the API key directly as provided by PayNetWorx
-  // The key format is: "pnx-xxxxx:yyyyy" and should be used as-is in Authorization header
-  if (HOSTED_PAYMENTS_API_KEY) {
-    return HOSTED_PAYMENTS_API_KEY;
+  // If FORCE_BASIC_AUTH is set, skip API key check and use Basic Auth
+  if (FORCE_BASIC_AUTH) {
+    if (!ACCESS_TOKEN_USER || !ACCESS_TOKEN_PASSWORD) {
+      throw new Error('PayNetWorx authentication not configured. Set PAYNETWORX_ACCESS_TOKEN_USER/ACCESS_TOKEN_PASSWORD');
+    }
+    return `Basic ${btoa(`${ACCESS_TOKEN_USER}:${ACCESS_TOKEN_PASSWORD}`)}`;
   }
-  // Fallback to Basic Auth with username/password for other PayNetWorx APIs
-  // Match PayNetWorx demo: use btoa() for base64 encoding
-  return `Basic ${btoa(`${ACCESS_TOKEN_USER}:${ACCESS_TOKEN_PASSWORD}`)}`;
+  
+  // Prefer Basic Auth if credentials are available (more reliable)
+  // Only use API key if Basic Auth is not available AND API key looks very valid
+  if (ACCESS_TOKEN_USER && ACCESS_TOKEN_PASSWORD) {
+    return `Basic ${btoa(`${ACCESS_TOKEN_USER}:${ACCESS_TOKEN_PASSWORD}`)}`;
+  }
+  
+  // Fallback to API key only if Basic Auth is not available
+  // For Hosted Payments API, use the API key directly as provided by PayNetWorx
+  // The key format is typically: "pnx-xxxxx:yyyyy" and should be used as-is in Authorization header
+  // Only use API key if it's set, non-empty, and looks like a valid API key
+  const apiKey = HOSTED_PAYMENTS_API_KEY?.trim();
+  if (apiKey && apiKey.length > 20 && apiKey.includes(':') && (apiKey.startsWith('pnx') || apiKey.length > 30)) {
+    return apiKey;
+  }
+  
+  // If neither is available, throw error
+  throw new Error('PayNetWorx authentication not configured. Set PAYNETWORX_ACCESS_TOKEN_USER/ACCESS_TOKEN_PASSWORD or a valid PAYNETWORX_HOSTED_PAYMENTS_API_KEY');
 }
 
 // Request helper for 3DS API endpoints
@@ -46,13 +63,20 @@ async function pnxPaymentRequest(method, path, data) {
     throw new Error('PayNetWorx Payment API URL not configured. Set PAYNETWORX_PAYMENT_API_URL or PAYNETWORX_HOSTED_PAYMENTS_API_URL');
   }
   const url = `${PAYMENT_API_URL}${path}`;
+  const authHeader = getAuthHeader();
   const headers = {
-    Authorization: getAuthHeader(),
+    Authorization: authHeader,
     'Content-Type': 'application/json',
     'Request-ID': ksuid.randomSync().string
   };
   const resp = await axios({ method, url, data, headers, timeout: REQUEST_TIMEOUT_MS, validateStatus: () => true });
   if (resp.status >= 200 && resp.status < 300) return resp.data;
+  
+  // If we get 403/401 and used API key, log it for debugging
+  if ((resp.status === 403 || resp.status === 401) && authHeader && !authHeader.startsWith('Basic ')) {
+    console.error('PayNetWorx ACH Credit Auth Error: API key authentication failed. Consider using Basic Auth instead.');
+  }
+  
   const err = new Error(`PayNetWorx Payment API error ${resp.status}`);
   err.response = resp;
   throw err;
