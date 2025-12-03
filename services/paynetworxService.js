@@ -402,7 +402,7 @@ export const processWithdrawal = async (req, res) => {
     let achData = null;
     
     if (bankAccountId) {
-      // Use saved bank account token (if BankAccount model exists)
+      // Use saved bank account (if BankAccount model exists)
       try {
         const bankAccountToken = await prisma.bankAccount.findFirst({
           where: { 
@@ -412,18 +412,65 @@ export const processWithdrawal = async (req, res) => {
           }
         });
         
-        if (!bankAccountToken || !bankAccountToken.ProviderBankAccountId) {
+        if (!bankAccountToken) {
           return res.status(404).send({ error: 'Bank account not found or invalid' });
         }
         
-        achData = {
-          Token: { TokenID: bankAccountToken.ProviderBankAccountId },
-          ACH: {
-            AchAccountType: bankAccountToken.AccountType,
-            CustomerName: bankAccountToken.AccountHolderName,
-            EffectiveDate: getTomorrowDate()
+        // If bank account has a token, use it
+        if (bankAccountToken.ProviderBankId) {
+          achData = {
+            Token: { TokenID: bankAccountToken.ProviderBankId },
+            ACH: {
+              AchAccountType: bankAccountToken.AccountType,
+              CustomerName: bankAccountToken.AccountName,
+              EffectiveDate: getTomorrowDate()
+            }
+          };
+        } else {
+          // Bank account exists but not tokenized - require full details for first withdrawal
+          // This will tokenize it during the withdrawal
+          if (!bankAccount || !bankAccount.routingNumber || !bankAccount.accountNumber || 
+              !bankAccount.accountType || !bankAccount.accountHolderName) {
+            return res.status(400).send({ 
+              error: 'Bank account not tokenized. Please provide full bank account details for first withdrawal.',
+              bankAccountId: parseInt(bankAccountId),
+              requiredFields: ['routingNumber', 'accountNumber', 'accountType', 'accountHolderName']
+            });
           }
-        };
+          
+          // Validate routing number (must be 9 digits)
+          if (!/^\d{9}$/.test(bankAccount.routingNumber)) {
+            return res.status(400).send({ error: 'Invalid routing number. Must be 9 digits.' });
+          }
+          
+          // Validate account type
+          const validAccountTypes = ['PersonalChecking', 'PersonalSavings', 'BusinessChecking', 'BusinessSavings'];
+          if (!validAccountTypes.includes(bankAccount.accountType)) {
+            return res.status(400).send({ 
+              error: 'Invalid account type',
+              validTypes: validAccountTypes
+            });
+          }
+          
+          // Use provided details and tokenize during withdrawal
+          achData = {
+            ACH: {
+              BankRoutingNumber: bankAccount.routingNumber,
+              AccountNumber: bankAccount.accountNumber,
+              AchAccountType: bankAccount.accountType,
+              CustomerName: bankAccount.accountHolderName,
+              CustomerIdentifier: userId.toString(),
+              EffectiveDate: getTomorrowDate()
+            }
+          };
+          
+          // Always tokenize on first use if bank account doesn't have token
+          if (!bankAccountToken.ProviderBankId) {
+            achData.DataAction = 'token/add';
+          } else if (bankAccount.tokenize) {
+            achData.DataAction = 'token/add';
+          }
+        }
       } catch (error) {
         // BankAccount model doesn't exist yet
         return res.status(400).send({ 
@@ -528,24 +575,56 @@ export const processWithdrawal = async (req, res) => {
         }
       });
 
-      // If tokenization was requested and token returned, save it
-      if (bankAccount && bankAccount.tokenize && pnxResponse.Token?.TokenID) {
+      // If tokenization occurred and token returned, save or update it
+      if (pnxResponse.Token?.TokenID) {
         try {
-          await prisma.bankAccount.create({
-            data: {
-              UserId: parseInt(userId),
-              Provider: 'paynetworx',
-              ProviderBankAccountId: pnxResponse.Token.TokenID,
-              AccountType: bankAccount.accountType,
-              AccountHolderName: bankAccount.accountHolderName,
-              AccountLast4: bankAccount.accountNumber.slice(-4),
-              Active: true,
-              IsDefault: false
+          // If bankAccountId was provided, update that bank account with the token
+          if (bankAccountId) {
+            await prisma.bankAccount.update({
+              where: { id: parseInt(bankAccountId) },
+              data: {
+                ProviderBankId: pnxResponse.Token.TokenID
+              }
+            });
+          } else if (bankAccount && bankAccount.tokenize) {
+            // New bank account - check if one exists with same details
+            const existingBankAccount = await prisma.bankAccount.findFirst({
+              where: {
+                UserId: parseInt(userId),
+                AccountLast4: bankAccount.accountNumber.slice(-4),
+                RoutingLast4: bankAccount.routingNumber.slice(-4),
+                AccountType: bankAccount.accountType
+              }
+            });
+
+            if (existingBankAccount) {
+              // Update existing bank account with token
+              await prisma.bankAccount.update({
+                where: { id: existingBankAccount.id },
+                data: {
+                  ProviderBankId: pnxResponse.Token.TokenID
+                }
+              });
+            } else {
+              // Create new bank account with token
+              await prisma.bankAccount.create({
+                data: {
+                  UserId: parseInt(userId),
+                  Provider: 'paynetworx',
+                  ProviderBankId: pnxResponse.Token.TokenID,
+                  AccountType: bankAccount.accountType,
+                  AccountName: bankAccount.accountHolderName,
+                  AccountLast4: bankAccount.accountNumber.slice(-4),
+                  RoutingLast4: bankAccount.routingNumber.slice(-4),
+                  Active: true,
+                  IsDefault: false
+                }
+              });
             }
-          });
+          }
         } catch (error) {
           // BankAccount model doesn't exist yet, just log
-          console.log('Bank account tokenization skipped - model not available:', error.message);
+          console.error('Bank account tokenization skipped - model not available:', error.message);
         }
       }
 

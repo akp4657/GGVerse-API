@@ -443,6 +443,7 @@ export const getUserBankAccounts = async (req, res) => {
         RoutingLast4: true,
         IsDefault: true,
         Provider: true,
+        ProviderBankId: true, // Include to check if tokenized
         created_at: true
       },
       orderBy: [
@@ -469,7 +470,8 @@ export const getUserBankAccounts = async (req, res) => {
   }
 };
 
-// Save a bank account (tokenize and save)
+// Save a bank account (save minimal info only, tokenize on first withdrawal)
+// This approach avoids storing full account numbers and only tokenizes during actual transactions
 export const saveBankAccount = async (req, res) => {
   try {
     const userId = req.user?.userId || req.user?.id;
@@ -479,8 +481,7 @@ export const saveBankAccount = async (req, res) => {
       routingNumber,
       accountNumber,
       accountType,
-      accountHolderName,
-      tokenize = true
+      accountHolderName
     } = req.body;
 
     // Validate required fields
@@ -505,70 +506,16 @@ export const saveBankAccount = async (req, res) => {
       });
     }
 
-    let tokenId = null;
-
-    // If tokenization is requested, tokenize via ACH Credit
-    if (tokenize) {
-      const achData = {
-        ACH: {
-          BankRoutingNumber: routingNumber,
-          AccountNumber: accountNumber,
-          AchAccountType: accountType,
-          CustomerName: accountHolderName,
-          CustomerIdentifier: userId.toString(),
-          EffectiveDate: getTomorrowDate()
-        },
-        DataAction: 'token/add'
-      };
-
-      const tokenizeRequest = {
-        Amount: {
-          Total: '0.01', // Minimal amount for tokenization
-          Currency: 'USD'
-        },
-        PaymentMethod: achData,
-        TransactionEntry: {
-          Device: 'NA',
-          DeviceVersion: 'NA',
-          Application: 'GGVerse API',
-          ApplicationVersion: '1.0',
-          Timestamp: new Date().toISOString()
-        }
-      };
-
-      try {
-        // Attempt to tokenize via ACH Credit (using same endpoint as withdrawal)
-        const pnxResponse = await pnxPaymentRequest('post', '/transaction/achcredit', tokenizeRequest);
-        
-        // If tokenization was successful, extract the token
-        if (pnxResponse.Token?.TokenID) {
-          tokenId = pnxResponse.Token.TokenID;
-        }
-      } catch (error) {
-        // If tokenization fails but we have a token in the response, use it
-        if (error.response?.data?.Token?.TokenID) {
-          tokenId = error.response.data.Token.TokenID;
-        } else {
-          // If tokenization was required and failed, return error
-          console.error('PayNetWorx ACH Credit Tokenization Error:', error.response?.data || error.message);
-          return res.status(400).send({
-            error: 'Failed to tokenize bank account',
-            message: error.response?.data?.Error || error.message
-          });
-        }
-      }
-    }
-
-    // Save bank account to database
-    // Note: Using ProviderBankId and AccountName to match schema
-    // If schema uses ProviderBankAccountId and AccountHolderName, update accordingly
+    // Save bank account with minimal info only (no full account numbers stored)
+    // Tokenization will happen automatically on first withdrawal when tokenize: true is set
+    // The token will then be saved to this bank account record
     const bankAccount = await prisma.bankAccount.create({
       data: {
         UserId: parseInt(userId),
         Provider: 'paynetworx',
-        ProviderBankId: tokenId, // Schema field name
+        ProviderBankId: null, // Will be set when tokenized during first withdrawal
         AccountType: accountType,
-        AccountName: accountHolderName, // Schema field name
+        AccountName: accountHolderName,
         AccountLast4: accountNumber.slice(-4),
         RoutingLast4: routingNumber.slice(-4),
         Active: true,
@@ -585,10 +532,11 @@ export const saveBankAccount = async (req, res) => {
         accountName: bankAccount.AccountName,
         routingLast4: bankAccount.RoutingLast4,
         isDefault: bankAccount.IsDefault || false,
+        isTokenized: false, // Not tokenized yet - will be tokenized on first withdrawal
         provider: bankAccount.Provider,
         createdAt: bankAccount.created_at
       },
-      message: 'Bank account saved successfully'
+      message: 'Bank account saved successfully. It will be tokenized automatically on your first withdrawal.'
     });
   } catch (error) {
     console.error('Error saving bank account:', error);
