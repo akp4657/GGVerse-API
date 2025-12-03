@@ -461,6 +461,7 @@ export const getUserBankAccounts = async (req, res) => {
         accountName: ba.AccountName,
         routingLast4: ba.RoutingLast4,
         isDefault: ba.IsDefault || false,
+        isTokenized: !!ba.ProviderBankId, // Indicate if bank account has been tokenized
         provider: ba.Provider,
         createdAt: ba.created_at
       }))
