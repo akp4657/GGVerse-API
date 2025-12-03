@@ -432,11 +432,12 @@ export const processWithdrawal = async (req, res) => {
 
     // Step 3: Validate bank account information
     let achData = null;
+    let bankAccountToken = null; // Declare in outer scope for use in DataAction check
     
     if (bankAccountId) {
       // Use saved bank account (if BankAccount model exists)
       try {
-        const bankAccountToken = await prisma.bankAccount.findFirst({
+        bankAccountToken = await prisma.bankAccount.findFirst({
           where: { 
             id: parseInt(bankAccountId), 
             UserId: parseInt(userId), 
@@ -494,8 +495,7 @@ export const processWithdrawal = async (req, res) => {
               CustomerName: bankAccountToken.AccountName,
               CustomerIdentifier: userId.toString(),
               EffectiveDate: getTomorrowDate()
-            },
-            DataAction: 'token/add' // Always tokenize on first use
+            }
           };
         }
       } catch (error) {
@@ -538,11 +538,6 @@ export const processWithdrawal = async (req, res) => {
           EffectiveDate: getTomorrowDate()
         }
       };
-      
-      // If tokenize requested, add DataAction
-      if (bankAccount.tokenize) {
-        achData.DataAction = 'token/add';
-      }
     }
 
     // Step 4: Create withdrawal transaction (status: pending)
@@ -586,6 +581,12 @@ export const processWithdrawal = async (req, res) => {
         }
       }
     };
+    
+    // Add DataAction at root level if tokenization is requested (per PayNetWorx docs)
+    // DataAction should be at the root of the request, not inside PaymentMethod
+    if ((bankAccountId && !bankAccountToken?.ProviderBankId) || (bankAccount && bankAccount.tokenize)) {
+      achCreditRequest.DataAction = 'token/add';
+    }
 
     const pnxResponse = await pnxPaymentRequest('post', '/transaction/achcredit', achCreditRequest);
 
@@ -603,6 +604,7 @@ export const processWithdrawal = async (req, res) => {
       });
 
       // If tokenization occurred and token returned, save or update it
+      // PayNetWorx returns token when DataAction: 'token/add' is used
       if (pnxResponse.Token?.TokenID) {
         try {
           // If bankAccountId was provided, update that bank account with the token
@@ -613,7 +615,7 @@ export const processWithdrawal = async (req, res) => {
                 ProviderBankId: pnxResponse.Token.TokenID
               }
             });
-          } else if (bankAccount && bankAccount.tokenize) {
+          } else if (bankAccount) {
             // New bank account - check if one exists with same details
             const existingBankAccount = await prisma.bankAccount.findFirst({
               where: {
@@ -634,7 +636,7 @@ export const processWithdrawal = async (req, res) => {
               });
             } else {
               // Create new bank account with token
-              await prisma.bankAccount.create({
+              const newBankAccount = await prisma.bankAccount.create({
                 data: {
                   UserId: parseInt(userId),
                   Provider: 'paynetworx',
@@ -655,7 +657,7 @@ export const processWithdrawal = async (req, res) => {
         }
       }
 
-      return res.json({
+      const responseData = {
         success: true,
         transactionId: transaction.id,
         amount: withdrawalAmount,
@@ -664,7 +666,21 @@ export const processWithdrawal = async (req, res) => {
         status: 'completed',
         paynetworxTransactionId: pnxResponse.TransactionID,
         message: 'Withdrawal processed successfully'
-      });
+      };
+      
+      // Include token in response if it was returned (for debugging/smoke test)
+      // PayNetWorx returns token at pnxResponse.Token.TokenID when DataAction: 'token/add' is used
+      if (pnxResponse.Token?.TokenID) {
+        responseData.token = pnxResponse.Token.TokenID;
+        responseData.bankAccountToken = pnxResponse.Token.TokenID; // Alias for clarity
+        responseData.tokenName = pnxResponse.Token.TokenName; // Include token name for reference
+      } else if (achCreditRequest.DataAction === 'token/add') {
+        // If we requested tokenization but didn't get a token, log it
+        console.error('Warning: DataAction token/add was used but no Token returned in response');
+        console.error('Full response:', JSON.stringify(pnxResponse, null, 2));
+      }
+      
+      return res.json(responseData);
     } else {
       // Payment failed - reverse wallet decrement
       await prisma.users.update({
@@ -700,8 +716,6 @@ export const processWithdrawal = async (req, res) => {
       }
     }
 
-    // Log detailed error for debugging
-    console.error('PayNetWorx ACH Credit Error:', e.response?.data || e.message);
     if (e.response) {
       console.error('Response Status:', e.response.status);
       console.error('Response Data:', JSON.stringify(e.response.data, null, 2));
