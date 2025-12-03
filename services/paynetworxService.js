@@ -7,12 +7,20 @@ const prisma = new PrismaClient();
 const THREE_DS_BASE_URL = process.env.PAYNETWORX_3DS_API_URL?.replace(/\/$/, '') || '';
 // Payment API URL for ACH and other payment operations (not 3DS)
 const PAYMENT_API_URL = process.env.PAYNETWORX_PAYMENT_API_URL?.replace(/\/$/, '') || process.env.PAYNETWORX_HOSTED_PAYMENTS_API_URL?.replace(/\/$/, '') || process.env.PAYNETWORX_3DS_API_URL?.replace(/\/$/, '') || '';
+const HOSTED_PAYMENTS_API_KEY = process.env.PAYNETWORX_HOSTED_PAYMENTS_API_KEY;
 const ACCESS_TOKEN_USER = process.env.PAYNETWORX_ACCESS_TOKEN_USER || process.env.PAYNETWORX_USERNAME;
 const ACCESS_TOKEN_PASSWORD = process.env.PAYNETWORX_ACCESS_TOKEN_PASSWORD || process.env.PAYNETWORX_PASSWORD;
 const REQUEST_TIMEOUT_MS = Number(process.env.PAYNETWORX_REQUEST_TIMEOUT_MS || 15000);
 const APP_URL = process.env.APP_URL || 'http://localhost:3000';
 
 function getAuthHeader() {
+  // Check for Hosted Payments API key first (if available)
+  // For Hosted Payments API, use the API key directly as provided by PayNetWorx
+  // The key format is: "pnx-xxxxx:yyyyy" and should be used as-is in Authorization header
+  if (HOSTED_PAYMENTS_API_KEY) {
+    return HOSTED_PAYMENTS_API_KEY;
+  }
+  // Fallback to Basic Auth with username/password for other PayNetWorx APIs
   // Match PayNetWorx demo: use btoa() for base64 encoding
   return `Basic ${btoa(`${ACCESS_TOKEN_USER}:${ACCESS_TOKEN_PASSWORD}`)}`;
 }
