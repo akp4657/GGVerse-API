@@ -8,6 +8,25 @@ datasource db {
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model BankAccount {
+  id             Int           @id @default(autoincrement())
+  UserId         Int
+  Provider       String?       @default("paynetworx")
+  ProviderBankId String?       @db.VarChar
+  AccountLast4   String?       @db.VarChar
+  AccountType    String?       @db.VarChar
+  AccountName    String?       @db.VarChar
+  RoutingLast4   String?       @db.VarChar
+  Active         Boolean?      @default(true)
+  IsDefault      Boolean?      @default(false)
+  created_at     DateTime?     @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime?     @db.Timestamptz(6)
+  Users          Users         @relation(fields: [UserId], references: [id], onDelete: Cascade)
+  Transaction    Transaction[]
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model Challenges {
   id                                   Int      @id @default(autoincrement())
   ChallengerId                         Int
@@ -111,8 +130,8 @@ model PaymentMethod {
   Users                   Users         @relation(fields: [UserId], references: [id], onDelete: Cascade)
   Transaction             Transaction[]
 
-  @@index([UserId])
   @@index([ProviderPaymentMethodId])
+  @@index([UserId])
 }
 
 model Transaction {
@@ -127,6 +146,8 @@ model Transaction {
   Status              String         @default("completed") @db.VarChar
   created_at          DateTime       @default(now()) @db.Timestamptz(6)
   PaymentMethodId     Int?
+  BankAccountId       Int?
+  BankAccount         BankAccount?   @relation(fields: [BankAccountId], references: [id], onDelete: Cascade)
   PaymentMethod       PaymentMethod? @relation(fields: [PaymentMethodId], references: [id], onDelete: Cascade)
   Users               Users          @relation(fields: [UserId], references: [id], onDelete: Cascade)
 }
@@ -156,6 +177,7 @@ model Users {
   Games                                     Int[]
   Console                                   Int?               @default(1)
   PushToken                                 String?
+  BankAccount                               BankAccount[]
   Challenges_Challenges_ChallengedIdToUsers Challenges[]       @relation("Challenges_ChallengedIdToUsers")
   Challenges_Challenges_ChallengerIdToUsers Challenges[]       @relation("Challenges_ChallengerIdToUsers")
   Match_History_Match_History_P1ToUsers     Match_History[]    @relation("Match_History_P1ToUsers")

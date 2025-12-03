@@ -372,3 +372,282 @@ export const verifyAndTokenizeCard = async (req, res) => {
   }
 };
 
+// ============================================================================
+// Bank Account Management
+// ============================================================================
+
+// Helper to get tomorrow's date in YYYY-MM-DD format (required for ACH)
+function getTomorrowDate() {
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return tomorrow.toISOString().split('T')[0];
+}
+
+// Request helper for Payment API endpoints (ACH, etc.)
+async function pnxPaymentRequest(method, path, data) {
+  const PAYMENT_API_URL = process.env.PAYNETWORX_PAYMENT_API_URL?.replace(/\/$/, '') || 
+                          process.env.PAYNETWORX_HOSTED_PAYMENTS_API_URL?.replace(/\/$/, '') || '';
+  const HOSTED_PAYMENTS_API_KEY = process.env.PAYNETWORX_HOSTED_PAYMENTS_API_KEY;
+  const ACCESS_TOKEN_USER = process.env.PAYNETWORX_ACCESS_TOKEN_USER || process.env.PAYNETWORX_USERNAME;
+  const ACCESS_TOKEN_PASSWORD = process.env.PAYNETWORX_ACCESS_TOKEN_PASSWORD || process.env.PAYNETWORX_PASSWORD;
+  const MERCHANT_ID = process.env.PAYNETWORX_MERCHANT_ID;
+  const REQUEST_TIMEOUT_MS = Number(process.env.PAYNETWORX_REQUEST_TIMEOUT_MS || 15000);
+
+  if (!PAYMENT_API_URL) {
+    throw new Error('PayNetWorx Payment API URL not configured. Set PAYNETWORX_PAYMENT_API_URL or PAYNETWORX_HOSTED_PAYMENTS_API_URL');
+  }
+
+  function getPaymentAuthHeader() {
+    if (HOSTED_PAYMENTS_API_KEY) {
+      return HOSTED_PAYMENTS_API_KEY;
+    }
+    return `Basic ${btoa(`${ACCESS_TOKEN_USER}:${ACCESS_TOKEN_PASSWORD}`)}`;
+  }
+
+  const url = `${PAYMENT_API_URL}${path}`;
+  const headers = {
+    Authorization: getPaymentAuthHeader(),
+    'Content-Type': 'application/json',
+    'Request-ID': ksuid.randomSync().string
+  };
+  if (MERCHANT_ID) {
+    headers['X-Merchant-Id'] = MERCHANT_ID;
+  }
+  const resp = await axios({ method, url, data, headers, timeout: REQUEST_TIMEOUT_MS, validateStatus: () => true });
+  if (resp.status >= 200 && resp.status < 300) return resp.data;
+  const err = new Error(`PayNetWorx Payment API error ${resp.status}`);
+  err.response = resp;
+  throw err;
+}
+
+// Get all bank accounts for the authenticated user
+export const getUserBankAccounts = async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+    if (!userId) return res.status(401).send({ error: 'User authentication required' });
+
+    const bankAccounts = await prisma.bankAccount.findMany({
+      where: {
+        UserId: parseInt(userId),
+        Active: true
+      },
+      orderBy: [
+        { IsDefault: 'desc' },
+        { created_at: 'desc' }
+      ]
+    });
+
+    return res.json({
+      success: true,
+      bankAccounts: bankAccounts.map(ba => ({
+        id: ba.id,
+        accountLast4: ba.AccountLast4,
+        accountType: ba.AccountType,
+        accountName: ba.AccountName || ba.AccountHolderName, // Support both field names
+        routingLast4: ba.RoutingLast4,
+        isDefault: ba.IsDefault || false,
+        provider: ba.Provider,
+        createdAt: ba.created_at
+      }))
+    });
+  } catch (error) {
+    console.error('Error fetching bank accounts:', error);
+    return res.status(500).send({ error: 'Failed to fetch bank accounts' });
+  }
+};
+
+// Save a bank account (tokenize and save)
+export const saveBankAccount = async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+    if (!userId) return res.status(401).send({ error: 'User authentication required' });
+
+    const {
+      routingNumber,
+      accountNumber,
+      accountType,
+      accountHolderName,
+      tokenize = true
+    } = req.body;
+
+    // Validate required fields
+    if (!routingNumber || !accountNumber || !accountType || !accountHolderName) {
+      return res.status(400).send({
+        error: 'Missing required fields',
+        requiredFields: ['routingNumber', 'accountNumber', 'accountType', 'accountHolderName']
+      });
+    }
+
+    // Validate routing number (must be 9 digits)
+    if (!/^\d{9}$/.test(routingNumber)) {
+      return res.status(400).send({ error: 'Invalid routing number. Must be 9 digits.' });
+    }
+
+    // Validate account type
+    const validAccountTypes = ['PersonalChecking', 'PersonalSavings', 'BusinessChecking', 'BusinessSavings'];
+    if (!validAccountTypes.includes(accountType)) {
+      return res.status(400).send({
+        error: 'Invalid account type',
+        validTypes: validAccountTypes
+      });
+    }
+
+    let tokenId = null;
+
+    // If tokenization is requested, tokenize via ACH Credit
+    if (tokenize) {
+      const achData = {
+        ACH: {
+          BankRoutingNumber: routingNumber,
+          AccountNumber: accountNumber,
+          AchAccountType: accountType,
+          CustomerName: accountHolderName,
+          CustomerIdentifier: userId.toString(),
+          EffectiveDate: getTomorrowDate()
+        },
+        DataAction: 'token/add'
+      };
+
+      const tokenizeRequest = {
+        Amount: {
+          Total: '0.01', // Minimal amount for tokenization
+          Currency: 'USD'
+        },
+        PaymentMethod: achData,
+        TransactionEntry: {
+          Device: 'NA',
+          DeviceVersion: 'NA',
+          Application: 'GGVerse API',
+          ApplicationVersion: '1.0',
+          Timestamp: new Date().toISOString()
+        }
+      };
+
+      try {
+        // Attempt to tokenize via ACH Credit
+        const pnxResponse = await pnxPaymentRequest('post', '/v0/transaction/achcredit', tokenizeRequest);
+        
+        // If tokenization was successful, extract the token
+        if (pnxResponse.Token?.TokenID) {
+          tokenId = pnxResponse.Token.TokenID;
+        }
+      } catch (error) {
+        // If tokenization fails but we have a token in the response, use it
+        if (error.response?.data?.Token?.TokenID) {
+          tokenId = error.response.data.Token.TokenID;
+        } else {
+          // If tokenization was required and failed, return error
+          console.error('PayNetWorx ACH Credit Tokenization Error:', error.response?.data || error.message);
+          return res.status(400).send({
+            error: 'Failed to tokenize bank account',
+            message: error.response?.data?.Error || error.message
+          });
+        }
+      }
+    }
+
+    // Save bank account to database
+    // Note: Using ProviderBankId and AccountName to match schema
+    // If schema uses ProviderBankAccountId and AccountHolderName, update accordingly
+    const bankAccount = await prisma.bankAccount.create({
+      data: {
+        UserId: parseInt(userId),
+        Provider: 'paynetworx',
+        ProviderBankId: tokenId, // Schema field name
+        AccountType: accountType,
+        AccountName: accountHolderName, // Schema field name
+        AccountLast4: accountNumber.slice(-4),
+        RoutingLast4: routingNumber.slice(-4),
+        Active: true,
+        IsDefault: false
+      }
+    });
+
+    return res.json({
+      success: true,
+      bankAccount: {
+        id: bankAccount.id,
+        accountLast4: bankAccount.AccountLast4,
+        accountType: bankAccount.AccountType,
+        accountName: bankAccount.AccountName,
+        routingLast4: bankAccount.RoutingLast4,
+        isDefault: bankAccount.IsDefault || false,
+        provider: bankAccount.Provider,
+        createdAt: bankAccount.created_at
+      },
+      message: 'Bank account saved successfully'
+    });
+  } catch (error) {
+    console.error('Error saving bank account:', error);
+    return res.status(500).send({ error: error.message || 'Failed to save bank account' });
+  }
+};
+
+// Set a bank account as default
+export const setDefaultBankAccount = async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+    if (!userId) return res.status(401).send({ error: 'User authentication required' });
+
+    const { bankAccountId } = req.params;
+    if (!bankAccountId) return res.status(400).send({ error: 'bankAccountId is required' });
+
+    // First, unset all other default bank accounts for this user
+    await prisma.bankAccount.updateMany({
+      where: {
+        UserId: parseInt(userId),
+        IsDefault: true
+      },
+      data: { IsDefault: false }
+    });
+
+    // Set this bank account as default
+    const bankAccount = await prisma.bankAccount.update({
+      where: {
+        id: parseInt(bankAccountId),
+        UserId: parseInt(userId)
+      },
+      data: { IsDefault: true }
+    });
+
+    return res.json({
+      success: true,
+      bankAccount: {
+        id: bankAccount.id,
+        accountLast4: bankAccount.AccountLast4,
+        isDefault: true
+      }
+    });
+  } catch (error) {
+    console.error('Error setting default bank account:', error);
+    return res.status(500).send({ error: 'Failed to set default bank account' });
+  }
+};
+
+// Delete a bank account (soft delete)
+export const deleteBankAccount = async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+    if (!userId) return res.status(401).send({ error: 'User authentication required' });
+
+    const { bankAccountId } = req.params;
+    if (!bankAccountId) return res.status(400).send({ error: 'bankAccountId is required' });
+
+    const bankAccount = await prisma.bankAccount.update({
+      where: {
+        id: parseInt(bankAccountId),
+        UserId: parseInt(userId)
+      },
+      data: { Active: false }
+    });
+
+    return res.json({
+      success: true,
+      message: 'Bank account deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting bank account:', error);
+    return res.status(500).send({ error: 'Failed to delete bank account' });
+  }
+};
+

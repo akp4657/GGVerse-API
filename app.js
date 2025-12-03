@@ -216,6 +216,12 @@ app.delete('/payment-methods/:paymentMethodId', geofence, userService.authentica
 // Combined verification + tokenization flow (requires authentication)
 app.post('/payment-methods/verify-and-tokenize', geofence, userService.authenticateToken, paymentMethodService.verifyAndTokenizeCard);
 
+// Bank account management endpoints (all require authentication)
+app.get('/bank-accounts', geofence, userService.authenticateToken, paymentMethodService.getUserBankAccounts);
+app.post('/bank-accounts', geofence, userService.authenticateToken, paymentMethodService.saveBankAccount);
+app.put('/bank-accounts/:bankAccountId/default', geofence, userService.authenticateToken, paymentMethodService.setDefaultBankAccount);
+app.delete('/bank-accounts/:bankAccountId', geofence, userService.authenticateToken, paymentMethodService.deleteBankAccount);
+
 // Payment processing with saved tokens (requires authentication)
 app.post('/paynetworx/payment', geofence, userService.authenticateToken, paynetworxService.processPaymentWithToken);
 
