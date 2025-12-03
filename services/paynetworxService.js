@@ -427,49 +427,44 @@ export const processWithdrawal = async (req, res) => {
             }
           };
         } else {
-          // Bank account exists but not tokenized - require full details for first withdrawal
-          // This will tokenize it during the withdrawal
-          if (!bankAccount || !bankAccount.routingNumber || !bankAccount.accountNumber || 
-              !bankAccount.accountType || !bankAccount.accountHolderName) {
+          // Bank account exists but not tokenized - require full account number for first withdrawal
+          // Routing number is already saved, we just need the full account number
+          if (!bankAccount || !bankAccount.accountNumber) {
             return res.status(400).send({ 
-              error: 'Bank account not tokenized. Please provide full bank account details for first withdrawal.',
+              error: 'Bank account not tokenized. Please provide your full account number to complete the withdrawal. This is a one-time process.',
               bankAccountId: parseInt(bankAccountId),
-              requiredFields: ['routingNumber', 'accountNumber', 'accountType', 'accountHolderName']
+              message: 'Your bank account will be tokenized automatically after this withdrawal for future use.',
+              requiredFields: ['accountNumber']
             });
           }
           
-          // Validate routing number (must be 9 digits)
-          if (!/^\d{9}$/.test(bankAccount.routingNumber)) {
-            return res.status(400).send({ error: 'Invalid routing number. Must be 9 digits.' });
+          // Validate account number (must be at least 4 digits)
+          if (!bankAccount.accountNumber || bankAccount.accountNumber.length < 4) {
+            return res.status(400).send({ error: 'Invalid account number. Must be at least 4 digits.' });
           }
           
-          // Validate account type
-          const validAccountTypes = ['PersonalChecking', 'PersonalSavings', 'BusinessChecking', 'BusinessSavings'];
-          if (!validAccountTypes.includes(bankAccount.accountType)) {
+          // Verify that the last 4 digits match what we have on file
+          const providedLast4 = bankAccount.accountNumber.slice(-4);
+          if (bankAccountToken.AccountLast4 && providedLast4 !== bankAccountToken.AccountLast4) {
             return res.status(400).send({ 
-              error: 'Invalid account type',
-              validTypes: validAccountTypes
+              error: 'Account number does not match. Please verify the last 4 digits match your saved account.',
+              expectedLast4: bankAccountToken.AccountLast4
             });
           }
           
-          // Use provided details and tokenize during withdrawal
+          // Use saved routing number (stored in RoutingLast4) and provided full account number
+          // Tokenize during withdrawal
           achData = {
             ACH: {
-              BankRoutingNumber: bankAccount.routingNumber,
-              AccountNumber: bankAccount.accountNumber,
-              AchAccountType: bankAccount.accountType,
-              CustomerName: bankAccount.accountHolderName,
+              BankRoutingNumber: bankAccountToken.RoutingLast4, // Full routing number stored here
+              AccountNumber: bankAccount.accountNumber, // Full account number provided by user
+              AchAccountType: bankAccountToken.AccountType,
+              CustomerName: bankAccountToken.AccountName,
               CustomerIdentifier: userId.toString(),
               EffectiveDate: getTomorrowDate()
-            }
+            },
+            DataAction: 'token/add' // Always tokenize on first use
           };
-          
-          // Always tokenize on first use if bank account doesn't have token
-          if (!bankAccountToken.ProviderBankId) {
-            achData.DataAction = 'token/add';
-          } else if (bankAccount.tokenize) {
-            achData.DataAction = 'token/add';
-          }
         }
       } catch (error) {
         // BankAccount model doesn't exist yet

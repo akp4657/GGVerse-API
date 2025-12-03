@@ -479,7 +479,7 @@ export const saveBankAccount = async (req, res) => {
 
     const {
       routingNumber,
-      accountNumber,
+      accountNumber, // Last 4 digits only when adding
       accountType,
       accountHolderName
     } = req.body;
@@ -497,6 +497,11 @@ export const saveBankAccount = async (req, res) => {
       return res.status(400).send({ error: 'Invalid routing number. Must be 9 digits.' });
     }
 
+    // Validate account number (should be last 4 digits when adding)
+    if (!/^\d{4}$/.test(accountNumber)) {
+      return res.status(400).send({ error: 'Invalid account number. Please provide the last 4 digits only.' });
+    }
+
     // Validate account type
     const validAccountTypes = ['PersonalChecking', 'PersonalSavings', 'BusinessChecking', 'BusinessSavings'];
     if (!validAccountTypes.includes(accountType)) {
@@ -506,9 +511,10 @@ export const saveBankAccount = async (req, res) => {
       });
     }
 
-    // Save bank account with minimal info only (no full account numbers stored)
-    // Tokenization will happen automatically on first withdrawal when tokenize: true is set
-    // The token will then be saved to this bank account record
+    // Save bank account with minimal info:
+    // - Full routing number stored in RoutingLast4 (despite the name, we store full routing number here)
+    // - Last 4 digits of account number stored in AccountLast4
+    // Tokenization will happen automatically on first withdrawal when full account number is provided
     const bankAccount = await prisma.bankAccount.create({
       data: {
         UserId: parseInt(userId),
@@ -516,8 +522,8 @@ export const saveBankAccount = async (req, res) => {
         ProviderBankId: null, // Will be set when tokenized during first withdrawal
         AccountType: accountType,
         AccountName: accountHolderName,
-        AccountLast4: accountNumber.slice(-4),
-        RoutingLast4: routingNumber.slice(-4),
+        AccountLast4: accountNumber, // Last 4 digits only
+        RoutingLast4: routingNumber, // Full routing number stored here
         Active: true,
         IsDefault: false
       }

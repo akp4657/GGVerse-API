@@ -1,0 +1,13 @@
+{
+  "amount": "10.00",
+  "currency": "USD",
+  "description": "Test withdrawal",
+  "bankAccount": {
+    "routingNumber": "999999999",
+    "accountNumber": "01234567890123456",
+    "accountType": "PersonalChecking",
+    "accountHolderName": "John Doe",
+    "tokenize": false
+  }
+}
+
