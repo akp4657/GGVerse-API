@@ -390,6 +390,7 @@ async function pnxPaymentRequest(method, path, data) {
   const PAYMENT_API_URL = process.env.PAYNETWORX_PAYMENT_API_URL?.replace(/\/$/, '') || 
                           process.env.PAYNETWORX_HOSTED_PAYMENTS_API_URL?.replace(/\/$/, '') || 
                           process.env.PAYNETWORX_3DS_API_URL?.replace(/\/$/, '') || '';
+  const HOSTED_PAYMENTS_API_KEY = process.env.PAYNETWORX_HOSTED_PAYMENTS_API_KEY;
   const ACCESS_TOKEN_USER = process.env.PAYNETWORX_ACCESS_TOKEN_USER || process.env.PAYNETWORX_USERNAME;
   const ACCESS_TOKEN_PASSWORD = process.env.PAYNETWORX_ACCESS_TOKEN_PASSWORD || process.env.PAYNETWORX_PASSWORD;
   const REQUEST_TIMEOUT_MS = Number(process.env.PAYNETWORX_REQUEST_TIMEOUT_MS || 15000);
@@ -399,6 +400,13 @@ async function pnxPaymentRequest(method, path, data) {
   }
 
   function getAuthHeader() {
+    // Use same logic as top-level getAuthHeader - check for API key first
+    // For Hosted Payments API, use the API key directly as provided by PayNetWorx
+    // The key format is: "pnx-xxxxx:yyyyy" and should be used as-is in Authorization header
+    if (HOSTED_PAYMENTS_API_KEY) {
+      return HOSTED_PAYMENTS_API_KEY;
+    }
+    // Fallback to Basic Auth with username/password for other PayNetWorx APIs
     return `Basic ${btoa(`${ACCESS_TOKEN_USER}:${ACCESS_TOKEN_PASSWORD}`)}`;
   }
 
