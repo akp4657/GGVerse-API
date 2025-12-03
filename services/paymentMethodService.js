@@ -384,35 +384,30 @@ function getTomorrowDate() {
 }
 
 // Request helper for Payment API endpoints (ACH, etc.)
+// Uses same configuration as paynetworxService.js for consistency
 async function pnxPaymentRequest(method, path, data) {
+  // Use same PAYMENT_API_URL configuration as paynetworxService.js
   const PAYMENT_API_URL = process.env.PAYNETWORX_PAYMENT_API_URL?.replace(/\/$/, '') || 
-                          process.env.PAYNETWORX_HOSTED_PAYMENTS_API_URL?.replace(/\/$/, '') || '';
-  const HOSTED_PAYMENTS_API_KEY = process.env.PAYNETWORX_HOSTED_PAYMENTS_API_KEY;
+                          process.env.PAYNETWORX_HOSTED_PAYMENTS_API_URL?.replace(/\/$/, '') || 
+                          process.env.PAYNETWORX_3DS_API_URL?.replace(/\/$/, '') || '';
   const ACCESS_TOKEN_USER = process.env.PAYNETWORX_ACCESS_TOKEN_USER || process.env.PAYNETWORX_USERNAME;
   const ACCESS_TOKEN_PASSWORD = process.env.PAYNETWORX_ACCESS_TOKEN_PASSWORD || process.env.PAYNETWORX_PASSWORD;
-  const MERCHANT_ID = process.env.PAYNETWORX_MERCHANT_ID;
   const REQUEST_TIMEOUT_MS = Number(process.env.PAYNETWORX_REQUEST_TIMEOUT_MS || 15000);
 
   if (!PAYMENT_API_URL) {
     throw new Error('PayNetWorx Payment API URL not configured. Set PAYNETWORX_PAYMENT_API_URL or PAYNETWORX_HOSTED_PAYMENTS_API_URL');
   }
 
-  function getPaymentAuthHeader() {
-    if (HOSTED_PAYMENTS_API_KEY) {
-      return HOSTED_PAYMENTS_API_KEY;
-    }
+  function getAuthHeader() {
     return `Basic ${btoa(`${ACCESS_TOKEN_USER}:${ACCESS_TOKEN_PASSWORD}`)}`;
   }
 
   const url = `${PAYMENT_API_URL}${path}`;
   const headers = {
-    Authorization: getPaymentAuthHeader(),
+    Authorization: getAuthHeader(),
     'Content-Type': 'application/json',
     'Request-ID': ksuid.randomSync().string
   };
-  if (MERCHANT_ID) {
-    headers['X-Merchant-Id'] = MERCHANT_ID;
-  }
   const resp = await axios({ method, url, data, headers, timeout: REQUEST_TIMEOUT_MS, validateStatus: () => true });
   if (resp.status >= 200 && resp.status < 300) return resp.data;
   const err = new Error(`PayNetWorx Payment API error ${resp.status}`);
@@ -534,8 +529,8 @@ export const saveBankAccount = async (req, res) => {
       };
 
       try {
-        // Attempt to tokenize via ACH Credit
-        const pnxResponse = await pnxPaymentRequest('post', '/v0/transaction/achcredit', tokenizeRequest);
+        // Attempt to tokenize via ACH Credit (using same endpoint as withdrawal)
+        const pnxResponse = await pnxPaymentRequest('post', '/transaction/achcredit', tokenizeRequest);
         
         // If tokenization was successful, extract the token
         if (pnxResponse.Token?.TokenID) {
