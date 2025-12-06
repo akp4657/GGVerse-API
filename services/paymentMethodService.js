@@ -63,12 +63,21 @@ export const initializeTokenizationSession = async (req, res) => {
 
     const response = await pnxRequest('post', '/v1/payments/sessions/create', sessionData);
     
-    // Response structure: { payment_session: { payment_session_id, payment_session_url, ... } }
+    // Response structure: { payment_session: { payment_session_id, payment_session_url, payment_session_request_id, ... } }
     const paymentSession = response.payment_session || response;
     
+    // Log full response for debugging
+    console.log('PayNetWorx session creation response:', JSON.stringify(response, null, 2));
+    
+    // Extract all relevant session identifiers
+    const sessionId = paymentSession.payment_session_id || paymentSession.session_id || paymentSession.id;
+    const paymentSessionRequestId = paymentSession.payment_session_request_id;
+    const iframeUrl = paymentSession.payment_session_url || paymentSession.iframe_url || paymentSession.url;
+    
     return res.json({
-      sessionId: paymentSession.payment_session_id || paymentSession.session_id || paymentSession.id,
-      iframeUrl: paymentSession.payment_session_url || paymentSession.iframe_url || paymentSession.url,
+      sessionId: sessionId,
+      paymentSessionRequestId: paymentSessionRequestId, // Include this for tokenization request
+      iframeUrl: iframeUrl,
       success: true
     });
   } catch (e) {
