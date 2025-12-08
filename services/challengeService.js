@@ -86,7 +86,7 @@ export const createChallenge = async (req, res) => {
         Status: 'pending'
       },
       include: {
-        Challenger: {
+        Users_Challenges_ChallengerIdToUsers: {
           select: {
             id: true,
             Username: true,
@@ -94,7 +94,7 @@ export const createChallenge = async (req, res) => {
             MMI: true
           }
         },
-        Challenged: {
+        Users_Challenges_ChallengedIdToUsers: {
           select: {
             id: true,
             Username: true,
@@ -159,7 +159,7 @@ export const getUserChallenges = async (req, res) => {
     const challenges = await prisma.challenges.findMany({
       where: whereClause, 
       include: {
-        Challenger: {
+        Users_Challenges_ChallengerIdToUsers: {
           select: {
             id: true,
             Username: true,
@@ -167,7 +167,7 @@ export const getUserChallenges = async (req, res) => {
             MMI: true
           }
         },
-        Challenged: {
+        Users_Challenges_ChallengedIdToUsers: {
           select: {
             id: true,
             Username: true,
@@ -204,8 +204,8 @@ export const acceptChallenge = async (req, res) => {
     const challenge = await prisma.challenges.findUnique({
       where: { id: parseInt(challengeId) },
       include: {
-        Challenger: true,
-        Challenged: true
+        Users_Challenges_ChallengerIdToUsers: true,
+        Users_Challenges_ChallengedIdToUsers: true
       }
     });
 
@@ -236,7 +236,7 @@ export const acceptChallenge = async (req, res) => {
       where: { id: parseInt(challengeId) },
       data: { Status: 'accepted' },
       include: {
-        Challenger: {
+        Users_Challenges_ChallengerIdToUsers: {
           select: {
             id: true,
             Username: true,
@@ -245,7 +245,7 @@ export const acceptChallenge = async (req, res) => {
             PushToken: true
           }
         },
-        Challenged: {
+        Users_Challenges_ChallengedIdToUsers: {
           select: {
             id: true,
             Username: true,
@@ -259,10 +259,10 @@ export const acceptChallenge = async (req, res) => {
 
     // Send push notification to challenger
     try {
-      if (updatedChallenge.Challenger.PushToken) {
+      if (updatedChallenge.Users_Challenges_ChallengerIdToUsers.PushToken) {
         await pushNotificationService.sendChallengeAcceptedNotification(
-          updatedChallenge.Challenger.PushToken,
-          updatedChallenge.Challenged.Username || 'Your opponent',
+          updatedChallenge.Users_Challenges_ChallengerIdToUsers.PushToken,
+          updatedChallenge.Users_Challenges_ChallengedIdToUsers.Username || 'Your opponent',
           {
             id: updatedChallenge.id,
             challengedId: updatedChallenge.ChallengedId,
@@ -322,7 +322,7 @@ export const declineChallenge = async (req, res) => {
       where: { id: parseInt(challengeId) },
       data: { Status: 'declined' },
       include: {
-        Challenger: {
+        Users_Challenges_ChallengerIdToUsers: {
           select: {
             id: true,
             Username: true,
@@ -330,7 +330,7 @@ export const declineChallenge = async (req, res) => {
             MMI: true
           }
         },
-        Challenged: {
+        Users_Challenges_ChallengedIdToUsers: {
           select: {
             id: true,
             Username: true,
@@ -346,7 +346,7 @@ export const declineChallenge = async (req, res) => {
       if (challenger && challenger.PushToken) {
         await pushNotificationService.sendChallengeDeclinedNotification(
           challenger.PushToken,
-          updatedChallenge.Challenged.Username || 'Your opponent',
+          updatedChallenge.Users_Challenges_ChallengedIdToUsers.Username || 'Your opponent',
           {
             id: updatedChallenge.id,
             challengedId: updatedChallenge.ChallengedId,
@@ -400,7 +400,7 @@ export const getChallengeById = async (req, res) => {
     const challenge = await prisma.challenges.findUnique({
       where: { id: parseInt(challengeId) },
       include: {
-        Challenger: {
+        Users_Challenges_ChallengerIdToUsers: {
           select: {
             id: true,
             Username: true,
@@ -408,7 +408,7 @@ export const getChallengeById = async (req, res) => {
             MMI: true
           }
         },
-        Challenged: {
+        Users_Challenges_ChallengedIdToUsers: {
           select: {
             id: true,
             Username: true,

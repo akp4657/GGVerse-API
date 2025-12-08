@@ -22,8 +22,8 @@ export const createDiscordThread = async (req, res) => {
     const challenge = await prisma.challenges.findUnique({
       where: { id: parseInt(challengeId) },
       include: {
-        Challenger: true,
-        Challenged: true
+        Users_Challenges_ChallengerIdToUsers: true,
+        Users_Challenges_ChallengedIdToUsers: true
       }
     });
 
@@ -75,14 +75,14 @@ export const getDiscordThreadInfo = async (req, res) => {
         DiscordThreadId: true,
         DiscordThreadUrl: true,
         Status: true,
-        Challenger: {
+        Users_Challenges_ChallengerIdToUsers: {
           select: {
             id: true,
             Username: true,
             Discord: true
           }
         },
-        Challenged: {
+        Users_Challenges_ChallengedIdToUsers: {
           select: {
             id: true,
             Username: true,
@@ -123,8 +123,8 @@ export const closeDiscordThread = async (req, res) => {
     const challenge = await prisma.challenges.findUnique({
       where: { id: parseInt(challengeId) },
       include: {
-        Challenger: true,
-        Challenged: true
+        Users_Challenges_ChallengerIdToUsers: true,
+        Users_Challenges_ChallengedIdToUsers: true
       }
     });
 
@@ -175,14 +175,14 @@ export const getUserDiscordThreads = async (req, res) => {
         DiscordThreadId: { not: null }
       },
       include: {
-        Challenger: {
+        Users_Challenges_ChallengerIdToUsers: {
           select: {
             id: true,
             Username: true,
             Avatar: true
           }
         },
-        Challenged: {
+        Users_Challenges_ChallengedIdToUsers: {
           select: {
             id: true,
             Username: true,
