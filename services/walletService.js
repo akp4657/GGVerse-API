@@ -1,8 +1,6 @@
-import { PrismaClient } from '@prisma/client';
 import Decimal from 'decimal.js';
+import prisma from '../prisma/prisma.js';
 import * as paynetworxService from './paynetworxService.js';
-
-const prisma = new PrismaClient();
 
 // Get current wallet balance for a user
 export const getWalletBalance = async (req, res) => {
@@ -140,6 +138,7 @@ export const getTransactionHistory = async (req, res) => {
 
 // Add funds to user wallet - supports PayNetWorx tokens via paymentMethodId
 export const addFunds = async (req, res) => {
+  console.log('addFunds', req.body);
   try {
     const userId = req.user?.userId || req.user?.id;
     if (!userId) return res.status(401).send({ error: 'User authentication required' });

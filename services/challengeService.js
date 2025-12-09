@@ -1,7 +1,5 @@
-import { PrismaClient } from '@prisma/client';
+import prisma from '../prisma/prisma.js';
 import * as pushNotificationService from './pushNotificationService.js';
-
-const prisma = new PrismaClient();
 
 /**
  * Create a new challenge

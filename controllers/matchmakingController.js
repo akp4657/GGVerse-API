@@ -1,7 +1,5 @@
 import MatchmakingService from '../services/matchmakingService.js';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import prisma from '../prisma/prisma.js';
 const matchmakingService = new MatchmakingService();
 
 // Get match suggestions for a user

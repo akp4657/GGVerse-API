@@ -1,8 +1,8 @@
 import express from 'express';
 import dotenv from 'dotenv';
-import { PrismaClient } from '@prisma/client';
 import fs from 'fs';
 import path from 'path';
+import prisma from './prisma/prisma.js';
 import * as emailService from './services/emailService.js';
 import * as userService from './services/userService.js';
 import * as walletService from './services/walletService.js';
@@ -20,7 +20,6 @@ import multer from 'multer';
 import cors from 'cors';
 import jwt from 'jsonwebtoken';
 dotenv.config();
-const prisma = new PrismaClient();
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (reason, promise) => {

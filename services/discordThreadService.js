@@ -1,7 +1,5 @@
-import { PrismaClient } from '@prisma/client';
+import prisma from '../prisma/prisma.js';
 import * as challengeService from './challengeService.js';
-
-const prisma = new PrismaClient();
 
 /**
  * Create a Discord thread for an accepted challenge

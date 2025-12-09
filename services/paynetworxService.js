@@ -1,12 +1,12 @@
 import axios from 'axios';
 import ksuid from 'ksuid';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import prisma from '../prisma/prisma.js';
 
 const THREE_DS_BASE_URL = process.env.PAYNETWORX_3DS_API_URL?.replace(/\/$/, '') || '';
-// Payment API URL for ACH and other payment operations (not 3DS)
-const PAYMENT_API_URL = process.env.PAYNETWORX_PAYMENT_API_URL?.replace(/\/$/, '') || process.env.PAYNETWORX_HOSTED_PAYMENTS_API_URL?.replace(/\/$/, '') || process.env.PAYNETWORX_3DS_API_URL?.replace(/\/$/, '') || '';
+// Payment API URL for ACH and payment processing (e.g., https://api.qa.paynetworx.net for test, https://api.paynetworx.net for production)
+// This is different from Hosted Payments API URL which is only for tokenization sessions
+const PAYMENT_API_URL = process.env.PAYNETWORX_PAYMENT_API_URL?.replace(/\/$/, '') || process.env.PAYNETWORX_3DS_API_URL?.replace(/\/$/, '') || '';
+const PAYMENT_HOSTED_PAYMENTS_API_URL = process.env.PAYNETWORX_HOSTED_PAYMENTS_API_URL || '';
 const HOSTED_PAYMENTS_API_KEY = process.env.PAYNETWORX_HOSTED_PAYMENTS_API_KEY;
 const FORCE_BASIC_AUTH = process.env.PAYNETWORX_FORCE_BASIC_AUTH === 'true';
 const ACCESS_TOKEN_USER = process.env.PAYNETWORX_ACCESS_TOKEN_USER || process.env.PAYNETWORX_USERNAME;
@@ -58,9 +58,11 @@ async function pnx3DSRequest(method, path, data) {
 }
 
 // Request helper for Payment API endpoints (ACH, etc.)
+// Note: Payment API endpoints like /v0/transaction/auth should use PAYMENT_API_URL (not Hosted Payments API URL)
+// Hosted Payments API URL is only for tokenization sessions (/v1/payments/sessions/create)
 async function pnxPaymentRequest(method, path, data) {
   if (!PAYMENT_API_URL) {
-    throw new Error('PayNetWorx Payment API URL not configured. Set PAYNETWORX_PAYMENT_API_URL or PAYNETWORX_HOSTED_PAYMENTS_API_URL');
+    throw new Error('PayNetWorx Payment API URL not configured. Set PAYNETWORX_PAYMENT_API_URL');
   }
   const url = `${PAYMENT_API_URL}${path}`;
   const authHeader = getAuthHeader();
@@ -69,7 +71,9 @@ async function pnxPaymentRequest(method, path, data) {
     'Content-Type': 'application/json',
     'Request-ID': ksuid.randomSync().string
   };
+  console.log('pnxPaymentRequest', url);
   const resp = await axios({ method, url, data, headers, timeout: REQUEST_TIMEOUT_MS, validateStatus: () => true });
+  console.log('pnxPaymentRequest', resp.data);
   if (resp.status >= 200 && resp.status < 300) return resp.data;
   
   // If we get 403/401 and used API key, log it for debugging
@@ -276,26 +280,35 @@ export const processPaymentWithToken = async (req, res) => {
     });
 
     if (!paymentMethod || !paymentMethod.ProviderPaymentMethodId) {
+      console.error('Payment method not found or invalid', paymentMethod);
       return res.status(404).send({ error: 'Payment method not found or invalid' });
     }
 
+
     // Step 2: Create payment request using token
-    // Note: PayNetWorx token payment structure - using 3DS API with token
+    const originalToken = paymentMethod.ProviderPaymentMethodId;
+    const formattedAmount = parseFloat(amount).toFixed(2);
+    
     const paymentRequest = {
       Amount: {
-        Total: String(amount),
+        Total: String(formattedAmount),
         Fee: '0.00',
         Tax: '0.00',
         Currency: currency.toUpperCase()
       },
       PaymentMethod: {
         Token: {
-          TokenValue: paymentMethod.ProviderPaymentMethodId
+          TokenID: originalToken
+        },
+        Card: {
+          CardPresent: false,
         }
       },
       Attributes: {
-        EntryMode: 'token',
-        ProcessingSpecifiers: { InitiatedByECommerce: true }
+        EntryMode: 'card-on-file',
+        ProcessingSpecifiers: {
+          InitiatedByECommerce: true
+        }
       },
       TransactionEntry: {
         Device: 'NA',
@@ -308,9 +321,17 @@ export const processPaymentWithToken = async (req, res) => {
         MerchantData: {}
       }
     };
+    console.log('paymentRequest', paymentRequest);
 
-    // Step 3: Process payment via PayNetWorx 3DS API
-    const pnx = await pnx3DSRequest('post', '/transaction/auth', paymentRequest);
+    // Step 4: Process payment via PayNetWorx Payment API
+    // Endpoint: /v0/transaction/auth (per PayNetWorx Payment API documentation)
+    const pnx = await pnxPaymentRequest('post', '/transaction/auth', paymentRequest);
+    
+    // Log response for debugging
+    if (pnx.PaymentResponse?.Response?.Status === 'FAILED_PRECONDITION' || pnx.status === 'FAILED_PRECONDITION') {
+      console.error(`[PayNetWorx] Payment failed with precondition error. Token format may be incorrect.`);
+      console.error(`[PayNetWorx] Original token: ${paymentMethod.ProviderPaymentMethodId.substring(0, 30)}...`);
+    }
 
     // Step 4: Create transaction record
     const trx = await prisma.transaction.create({

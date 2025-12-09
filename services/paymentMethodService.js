@@ -1,8 +1,6 @@
 import axios from 'axios';
 import ksuid from 'ksuid';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import prisma from '../prisma/prisma.js';
 
 // For tokenization, we need Hosted Payments API URL, not 3DS API URL
 const PAYMENT_API_URL = process.env.PAYNETWORX_HOSTED_PAYMENTS_API_URL?.replace(/\/$/, '') || process.env.PAYNETWORX_PAYMENT_API_URL?.replace(/\/$/, '') || process.env.PAYNETWORX_3DS_API_URL?.replace(/\/$/, '') || '';
