@@ -94,7 +94,7 @@ export const initiate3DSAuth = async (req, res) => {
       return res.status(400).send({ error: 'Missing required fields: cardNumber, expiryDate, cvv, amount, userId' });
     }
 
-    const user = await prisma.users.findUnique({ where: { id: parseInt(userId) } });
+    const user = await prisma.Users.findUnique({ where: { id: parseInt(userId) } });
     if (!user) return res.status(404).send({ error: 'User not found' });
 
     const authRequest = {
@@ -132,7 +132,7 @@ export const initiate3DSAuth = async (req, res) => {
     const pnx = await pnx3DSRequest('post', '/transaction/auth', authRequest);
 
     // Record pending transaction
-    const trx = await prisma.transaction.create({
+    const trx = await prisma.Transaction.create({
       data: {
         UserId: parseInt(userId),
         Type: 'deposit',
@@ -169,8 +169,8 @@ export const initiate3DSAuth = async (req, res) => {
       });
     }
 
-    await prisma.users.update({ where: { id: parseInt(userId) }, data: { Wallet: { increment: Number(amount) } } });
-    await prisma.transaction.update({ where: { id: trx.id }, data: { Status: 'completed' } });
+    await prisma.Users.update({ where: { id: parseInt(userId) }, data: { Wallet: { increment: Number(amount) } } });
+    await prisma.Transaction.update({ where: { id: trx.id }, data: { Status: 'completed' } });
 
     return res.json({ threeDSServerTransID: pnx.threeDSServerTransID, transactionId: trx.id, PaymentResponse: pnx, status: 'completed' });
   } catch (e) {
@@ -200,10 +200,10 @@ export const check3DSMethod = async (req, res) => {
     }
 
     // frictionless after method
-    const trx = await prisma.transaction.findFirst({ where: { Paynetworx3DSId: pnx.threeDSServerTransID } });
+    const trx = await prisma.Transaction.findFirst({ where: { Paynetworx3DSId: pnx.threeDSServerTransID } });
     if (trx && trx.Status === 'pending_3ds') {
-      await prisma.users.update({ where: { id: trx.UserId }, data: { Wallet: { increment: Number(trx.Amount) } } });
-      await prisma.transaction.update({ where: { id: trx.id }, data: { Status: 'completed' } });
+      await prisma.Users.update({ where: { id: trx.UserId }, data: { Wallet: { increment: Number(trx.Amount) } } });
+      await prisma.Transaction.update({ where: { id: trx.id }, data: { Status: 'completed' } });
     }
 
     return res.json({ threeDSServerTransID: pnx.threeDSServerTransID, PaymentResponse: pnx, status: 'completed' });
@@ -239,15 +239,15 @@ export const checkChallengeResult = async (req, res) => {
     if (!tranId) return res.status(400).send({ error: 'tranId is required' });
 
     const result = await waitForChallenge(tranId);
-    const trx = await prisma.transaction.findFirst({ where: { Paynetworx3DSId: result.threeDSServerTransID } });
+    const trx = await prisma.Transaction.findFirst({ where: { Paynetworx3DSId: result.threeDSServerTransID } });
 
     if (trx) {
       const approved = Boolean(result?.PaymentResponse?.Response?.Approved) || Boolean(result?.Approved);
       if (approved) {
-        await prisma.users.update({ where: { id: trx.UserId }, data: { Wallet: { increment: Number(trx.Amount) } } });
-        await prisma.transaction.update({ where: { id: trx.id }, data: { Status: 'completed' } });
+        await prisma.Users.update({ where: { id: trx.UserId }, data: { Wallet: { increment: Number(trx.Amount) } } });
+        await prisma.Transaction.update({ where: { id: trx.id }, data: { Status: 'completed' } });
       } else {
-        await prisma.transaction.update({ where: { id: trx.id }, data: { Status: 'failed' } });
+        await prisma.Transaction.update({ where: { id: trx.id }, data: { Status: 'failed' } });
       }
     }
 
@@ -270,7 +270,7 @@ export const processPaymentWithToken = async (req, res) => {
     }
 
     // Step 1: Look up PaymentMethod by ID and verify it belongs to user
-    const paymentMethod = await prisma.paymentMethod.findFirst({
+    const paymentMethod = await prisma.PaymentMethod.findFirst({
       where: {
         id: parseInt(paymentMethodId),
         UserId: parseInt(userId),
@@ -334,7 +334,7 @@ export const processPaymentWithToken = async (req, res) => {
     }
 
     // Step 4: Create transaction record
-    const trx = await prisma.transaction.create({
+    const trx = await prisma.Transaction.create({
       data: {
         UserId: parseInt(userId),
         Type: 'deposit',
@@ -351,7 +351,7 @@ export const processPaymentWithToken = async (req, res) => {
     // Step 5: If approved, increment user wallet
     const approved = Boolean(pnx.PaymentResponse?.Response?.Approved) || Boolean(pnx.Approved);
     if (approved) {
-      await prisma.users.update({
+      await prisma.Users.update({
         where: { id: parseInt(userId) },
         data: { Wallet: { increment: Number(amount) } }
       });
@@ -379,7 +379,7 @@ function getTomorrowDate() {
 
 // Helper function to get available balance (wallet - escrow)
 async function getAvailableBalance(userId) {
-  const user = await prisma.users.findUnique({
+  const user = await prisma.Users.findUnique({
     where: { id: userId },
     select: { Wallet: true }
   });
@@ -425,7 +425,7 @@ export const processWithdrawal = async (req, res) => {
     }
 
     // Step 1: Get user and calculate available balance
-    const user = await prisma.users.findUnique({
+    const user = await prisma.Users.findUnique({
       where: { id: parseInt(userId) },
       select: { id: true, Wallet: true, Username: true, Email: true }
     });
@@ -458,7 +458,7 @@ export const processWithdrawal = async (req, res) => {
     if (bankAccountId) {
       // Use saved bank account (if BankAccount model exists)
       try {
-        bankAccountToken = await prisma.bankAccount.findFirst({
+        bankAccountToken = await prisma.BankAccount.findFirst({
           where: { 
             id: parseInt(bankAccountId), 
             UserId: parseInt(userId), 
@@ -562,7 +562,7 @@ export const processWithdrawal = async (req, res) => {
     }
 
     // Step 4: Create withdrawal transaction (status: pending)
-    transaction = await prisma.transaction.create({
+    transaction = await prisma.Transaction.create({
       data: {
         UserId: parseInt(userId),
         Type: 'withdrawal',
@@ -574,7 +574,7 @@ export const processWithdrawal = async (req, res) => {
     });
 
     // Step 5: Decrement wallet balance
-    await prisma.users.update({
+    await prisma.Users.update({
       where: { id: parseInt(userId) },
       data: { Wallet: { decrement: withdrawalAmount } }
     });
@@ -616,7 +616,7 @@ export const processWithdrawal = async (req, res) => {
 
     if (approved) {
       // Update transaction status
-      await prisma.transaction.update({
+      await prisma.Transaction.update({
         where: { id: transaction.id },
         data: {
           Status: 'completed',
@@ -630,7 +630,7 @@ export const processWithdrawal = async (req, res) => {
         try {
           // If bankAccountId was provided, update that bank account with the token
           if (bankAccountId) {
-            await prisma.bankAccount.update({
+            await prisma.BankAccount.update({
               where: { id: parseInt(bankAccountId) },
               data: {
                 ProviderBankId: pnxResponse.Token.TokenID
@@ -638,7 +638,7 @@ export const processWithdrawal = async (req, res) => {
             });
           } else if (bankAccount) {
             // New bank account - check if one exists with same details
-            const existingBankAccount = await prisma.bankAccount.findFirst({
+            const existingBankAccount = await prisma.BankAccount.findFirst({
               where: {
                 UserId: parseInt(userId),
                 AccountLast4: bankAccount.accountNumber.slice(-4),
@@ -649,7 +649,7 @@ export const processWithdrawal = async (req, res) => {
 
             if (existingBankAccount) {
               // Update existing bank account with token
-              await prisma.bankAccount.update({
+              await prisma.BankAccount.update({
                 where: { id: existingBankAccount.id },
                 data: {
                   ProviderBankId: pnxResponse.Token.TokenID
@@ -657,7 +657,7 @@ export const processWithdrawal = async (req, res) => {
               });
             } else {
               // Create new bank account with token
-              const newBankAccount = await prisma.bankAccount.create({
+              const newBankAccount = await prisma.BankAccount.create({
                 data: {
                   UserId: parseInt(userId),
                   Provider: 'paynetworx',
@@ -704,12 +704,12 @@ export const processWithdrawal = async (req, res) => {
       return res.json(responseData);
     } else {
       // Payment failed - reverse wallet decrement
-      await prisma.users.update({
+      await prisma.Users.update({
         where: { id: parseInt(userId) },
         data: { Wallet: { increment: withdrawalAmount } }
       });
 
-      await prisma.transaction.update({
+      await prisma.Transaction.update({
         where: { id: transaction.id },
         data: { Status: 'failed' }
       });
@@ -724,11 +724,11 @@ export const processWithdrawal = async (req, res) => {
     // If wallet was decremented but API call failed, reverse it
     if (transaction && transaction.Status === 'pending') {
       try {
-        await prisma.users.update({
+        await prisma.Users.update({
           where: { id: parseInt(req.user?.userId || req.user?.id) },
           data: { Wallet: { increment: Number(req.body.amount) } }
         });
-        await prisma.transaction.update({
+        await prisma.Transaction.update({
           where: { id: transaction.id },
           data: { Status: 'failed' }
         });

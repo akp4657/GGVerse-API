@@ -12,7 +12,7 @@ export const getWalletBalance = async (req, res) => {
       return res.status(400).send({ error: 'Valid userId is required' });
     }
 
-    const user = await prisma.users.findUnique({
+    const user = await prisma.Users.findUnique({
       where: { id: parseInt(userId) },
       select: { 
         id: true, 
@@ -35,6 +35,10 @@ export const getWalletBalance = async (req, res) => {
     });
   } catch (err) {
     console.error('Error getting wallet balance:', err);
+    // Handle database connection errors
+    if (err.code === 'P1001') {
+      return res.status(503).send({ error: 'Database temporarily unavailable. Please try again.' });
+    }
     res.status(500).send({ error: 'Failed to get wallet balance' });
   }
 };
@@ -59,7 +63,7 @@ export const getTransactionHistory = async (req, res) => {
     }
 
     // Check if user exists
-    const user = await prisma.users.findUnique({
+    const user = await prisma.Users.findUnique({
       where: { id: parseInt(userId) },
       select: { id: true, Username: true }
     });
@@ -79,7 +83,7 @@ export const getTransactionHistory = async (req, res) => {
     }
 
     // Get transactions with pagination
-    const transactions = await prisma.transaction.findMany({
+    const transactions = await prisma.Transaction.findMany({
       where: whereClause,
       orderBy: { created_at: 'desc' },
       skip: (pageNum - 1) * limitNum,
@@ -98,7 +102,7 @@ export const getTransactionHistory = async (req, res) => {
     });
 
     // Get total count for pagination
-    const totalCount = await prisma.transaction.count({
+    const totalCount = await prisma.Transaction.count({
       where: whereClause
     });
 
@@ -132,6 +136,10 @@ export const getTransactionHistory = async (req, res) => {
     });
   } catch (err) {
     console.error('Error getting transaction history:', err);
+    // Handle database connection errors
+    if (err.code === 'P1001') {
+      return res.status(503).send({ error: 'Database temporarily unavailable. Please try again.' });
+    }
     res.status(500).send({ error: 'Failed to get transaction history' });
   }
 };

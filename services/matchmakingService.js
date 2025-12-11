@@ -8,7 +8,7 @@ export class MatchmakingService {
 
   // Core data collection
   async getPlayerData(playerId, gameId = null) {
-    const user = await prisma.users.findUnique({
+    const user = await prisma.Users.findUnique({
       where: { id: playerId }
     });
 
@@ -166,7 +166,7 @@ export class MatchmakingService {
       whereClause.Game = gameId;
     }
 
-    const allMatches = await prisma.match_History.findMany({
+    const allMatches = await prisma.Match_History.findMany({
       where: whereClause,
       orderBy: { created_at: 'desc' },
       take: MatchmakingService.MATCH_LIMIT
@@ -193,7 +193,7 @@ export class MatchmakingService {
 
   // Calculate rivalry heat between two players
   async calculateRivalryHeat(player1Id, player2Id) {
-    const matches = await prisma.match_History.findMany({
+    const matches = await prisma.Match_History.findMany({
       where: {
         OR: [
           { P1: player1Id, P2: player2Id },
@@ -247,7 +247,7 @@ export class MatchmakingService {
 
   // Calculate current streak
   async calculateStreak(playerId) {
-    const recentMatches = await prisma.match_History.findMany({
+    const recentMatches = await prisma.Match_History.findMany({
       where: {
         OR: [
           { P1: playerId },
@@ -341,12 +341,12 @@ export class MatchmakingService {
   async calculateGameCompatibility(player1Id, player2Id, gameId = null) {
     // If no specific game is requested, check overall game overlap
     if (!gameId) {
-      const player1 = await prisma.users.findUnique({
+      const player1 = await prisma.Users.findUnique({
         where: { id: player1Id },
         select: { Games: true }
       });
       
-      const player2 = await prisma.users.findUnique({
+      const player2 = await prisma.Users.findUnique({
         where: { id: player2Id },
         select: { Games: true }
       });
@@ -363,12 +363,12 @@ export class MatchmakingService {
       return union.length > 0 ? intersection.length / union.length : 0;
     } else {
       // If specific game is requested, check if both players have it
-      const player1 = await prisma.users.findUnique({
+      const player1 = await prisma.Users.findUnique({
         where: { id: player1Id },
         select: { Games: true }
       });
       
-      const player2 = await prisma.users.findUnique({
+      const player2 = await prisma.Users.findUnique({
         where: { id: player2Id },
         select: { Games: true }
       });
@@ -392,7 +392,7 @@ export class MatchmakingService {
   // Select top matches for a player
   async selectTopMatches(playerId, limit = 3, gameId = null) {
     // Get the player's Console to filter opponents by same Console
-    const player = await prisma.users.findUnique({
+    const player = await prisma.Users.findUnique({
       where: { id: playerId },
       select: { Console: true }
     });
@@ -402,7 +402,7 @@ export class MatchmakingService {
     }
 
     // Get all active players with the same Console except the current player
-    const allPlayers = await prisma.users.findMany({
+    const allPlayers = await prisma.Users.findMany({
       where: {
         id: { not: playerId },
         Active: true,
@@ -457,7 +457,7 @@ export class MatchmakingService {
 
   // Get rivalry match count
   async getRivalryMatchCount(player1Id, player2Id) {
-    const matches = await prisma.match_History.count({
+    const matches = await prisma.Match_History.count({
       where: {
         OR: [
           { P1: player1Id, P2: player2Id },
@@ -487,7 +487,7 @@ export class MatchmakingService {
 
   // Check for multiple blowouts
   async hasMultipleBlowouts(player1Id, player2Id) {
-    const recentMatches = await prisma.match_History.findMany({
+    const recentMatches = await prisma.Match_History.findMany({
       where: {
         OR: [
           { P1: player1Id, P2: player2Id },
@@ -513,7 +513,7 @@ export class MatchmakingService {
 
   // Check for too many consecutive matches
   async tooManyConsecutiveMatches(player1Id, player2Id) {
-    const recentMatches = await prisma.match_History.findMany({
+    const recentMatches = await prisma.Match_History.findMany({
       where: {
         OR: [
           { P1: player1Id, P2: player2Id },
@@ -537,7 +537,7 @@ export class MatchmakingService {
   // Update player's MMI score for all games
   async updatePlayerMMI(playerId) {
     // Get all games the player participates in
-    const user = await prisma.users.findUnique({
+    const user = await prisma.Users.findUnique({
       where: { id: playerId },
       select: { Games: true, MMI: true }
     });
@@ -567,7 +567,7 @@ export class MatchmakingService {
     }
 
     // Update the player's MMI score (assuming MMI field can store JSON)
-    await prisma.users.update({
+    await prisma.Users.update({
       where: { id: playerId },
       data: {
         MMI: gameMMI,
@@ -590,7 +590,7 @@ export class MatchmakingService {
     const gameMMIScore = (skillComponent + bettingComponent + rivalryComponent) / 3;
 
     // Get current MMI data
-    const user = await prisma.users.findUnique({
+    const user = await prisma.Users.findUnique({
       where: { id: playerId },
       select: { MMI: true }
     });
@@ -607,7 +607,7 @@ export class MatchmakingService {
     currentMMI[gameId.toString()] = gameMMIScore;
 
     // Update the player's MMI score
-    await prisma.users.update({
+    await prisma.Users.update({
       where: { id: playerId },
       data: {
         MMI: currentMMI,
@@ -620,7 +620,7 @@ export class MatchmakingService {
 
   // Get player's MMI score for a specific game
   async getPlayerMMIForGame(playerId, gameId) {
-    const user = await prisma.users.findUnique({
+    const user = await prisma.Users.findUnique({
       where: { id: playerId },
       select: { MMI: true }
     });

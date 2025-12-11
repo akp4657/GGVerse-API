@@ -107,6 +107,7 @@ if (!fs.existsSync(uploadsDir)) {
 // User profile endpoints
 app.get('/user/profile', userService.authenticateToken, userService.getCurrentUser);
 app.put('/user/profile', geofence, userService.authenticateToken, userService.updateUserProfile);
+app.put('/user/password', geofence, userService.authenticateToken, userService.changePassword);
 app.post('/user/push-token', geofence, userService.authenticateToken, userService.storePushToken);
 // Avatar upload endpoint with error handling
 app.post('/user/avatar/upload', geofence, userService.authenticateToken, (req, res, next) => {

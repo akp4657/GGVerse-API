@@ -92,7 +92,7 @@ export const saveTokenizedPaymentMethod = async (req, res) => {
     const { token, cardLast4, cardBrand, cardExpMonth, cardExpYear } = req.body;
     if (!token || !cardLast4) return res.status(400).send({ error: 'Token and cardLast4 are required' });
 
-    const paymentMethod = await prisma.paymentMethod.create({
+    const paymentMethod = await prisma.PaymentMethod.create({
       data: {
         UserId: parseInt(userId),
         Provider: 'paynetworx',
@@ -128,7 +128,7 @@ export const getUserPaymentMethods = async (req, res) => {
     if (!userId) return res.status(401).send({ error: 'User authentication required' });
 
     // Fetch all active payment methods for user (exclude tokens, return metadata only)
-    const paymentMethods = await prisma.paymentMethod.findMany({
+    const paymentMethods = await prisma.PaymentMethod.findMany({
       where: {
         UserId: parseInt(userId),
         Active: true
@@ -174,7 +174,7 @@ export const setDefaultPaymentMethod = async (req, res) => {
     if (!paymentMethodId) return res.status(400).send({ error: 'paymentMethodId is required' });
 
     // Verify payment method belongs to user
-    const paymentMethod = await prisma.paymentMethod.findFirst({
+    const paymentMethod = await prisma.PaymentMethod.findFirst({
       where: {
         id: parseInt(paymentMethodId),
         UserId: parseInt(userId),
@@ -187,13 +187,13 @@ export const setDefaultPaymentMethod = async (req, res) => {
     }
 
     // Set selected payment method as default
-    await prisma.paymentMethod.update({
+    await prisma.PaymentMethod.update({
       where: { id: parseInt(paymentMethodId) },
       data: { IsDefault: true }
     });
 
     // Unset all other user payment methods' default status
-    await prisma.paymentMethod.updateMany({
+    await prisma.PaymentMethod.updateMany({
       where: {
         UserId: parseInt(userId),
         id: { not: parseInt(paymentMethodId) }
@@ -202,7 +202,7 @@ export const setDefaultPaymentMethod = async (req, res) => {
     });
 
     // Return updated payment method
-    const updatedPaymentMethod = await prisma.paymentMethod.findUnique({
+    const updatedPaymentMethod = await prisma.PaymentMethod.findUnique({
       where: { id: parseInt(paymentMethodId) },
       select: {
         id: true,
@@ -243,7 +243,7 @@ export const deletePaymentMethod = async (req, res) => {
     if (!paymentMethodId) return res.status(400).send({ error: 'paymentMethodId is required' });
 
     // Verify payment method belongs to user
-    const paymentMethod = await prisma.paymentMethod.findFirst({
+    const paymentMethod = await prisma.PaymentMethod.findFirst({
       where: {
         id: parseInt(paymentMethodId),
         UserId: parseInt(userId)
@@ -255,7 +255,7 @@ export const deletePaymentMethod = async (req, res) => {
     }
 
     // Soft delete: set Active = false
-    await prisma.paymentMethod.update({
+    await prisma.PaymentMethod.update({
       where: { id: parseInt(paymentMethodId) },
       data: { Active: false }
     });
@@ -289,7 +289,7 @@ export const verifyAndTokenizeCard = async (req, res) => {
       return `Basic ${btoa(`${ACCESS_TOKEN_USER}:${ACCESS_TOKEN_PASSWORD}`)}`;
     }
 
-    const user = await prisma.users.findUnique({ where: { id: parseInt(userId) } });
+    const user = await prisma.Users.findUnique({ where: { id: parseInt(userId) } });
     if (!user) return res.status(404).send({ error: 'User not found' });
 
     const authRequest = {
@@ -437,7 +437,7 @@ export const getUserBankAccounts = async (req, res) => {
     if (!userId) return res.status(401).send({ error: 'User authentication required' });
 
     // Fetch all active bank accounts for user (exclude tokens, return metadata only)
-    const bankAccounts = await prisma.bankAccount.findMany({
+    const bankAccounts = await prisma.BankAccount.findMany({
       where: {
         UserId: parseInt(userId),
         Active: true
@@ -459,7 +459,14 @@ export const getUserBankAccounts = async (req, res) => {
       ]
     });
 
-    return res.json({
+    if(bankAccounts.length <= 0) {
+      return res.status(204).json({
+        success: true,
+        message: 'No bank accounts found'
+      });
+    }
+
+    return res.status(200).json({
       success: true,
       bankAccounts: bankAccounts.map(ba => ({
         id: ba.id,
@@ -468,7 +475,7 @@ export const getUserBankAccounts = async (req, res) => {
         accountName: ba.AccountName,
         routingLast4: ba.RoutingLast4,
         isDefault: ba.IsDefault || false,
-        isTokenized: !!ba.ProviderBankId, // Indicate if bank account has been tokenized
+        isTokenized: !!ba.ProviderBankId,
         providerBankId: ba.ProviderBankId,
         provider: ba.Provider,
         createdAt: ba.created_at
@@ -524,7 +531,7 @@ export const saveBankAccount = async (req, res) => {
     // - Full routing number stored in RoutingLast4 (despite the name, we store full routing number here)
     // - Last 4 digits of account number stored in AccountLast4
     // Tokenization will happen automatically on first withdrawal when full account number is provided
-    const bankAccount = await prisma.bankAccount.create({
+    const bankAccount = await prisma.BankAccount.create({
       data: {
         UserId: parseInt(userId),
         Provider: 'paynetworx',
@@ -569,7 +576,7 @@ export const setDefaultBankAccount = async (req, res) => {
     if (!bankAccountId) return res.status(400).send({ error: 'bankAccountId is required' });
 
     // First, unset all other default bank accounts for this user
-    await prisma.bankAccount.updateMany({
+    await prisma.BankAccount.updateMany({
       where: {
         UserId: parseInt(userId),
         IsDefault: true
@@ -578,7 +585,7 @@ export const setDefaultBankAccount = async (req, res) => {
     });
 
     // Set this bank account as default
-    const bankAccount = await prisma.bankAccount.update({
+    const bankAccount = await prisma.BankAccount.update({
       where: {
         id: parseInt(bankAccountId),
         UserId: parseInt(userId)
@@ -609,7 +616,7 @@ export const deleteBankAccount = async (req, res) => {
     const { bankAccountId } = req.params;
     if (!bankAccountId) return res.status(400).send({ error: 'bankAccountId is required' });
 
-    const bankAccount = await prisma.bankAccount.update({
+    const bankAccount = await prisma.BankAccount.update({
       where: {
         id: parseInt(bankAccountId),
         UserId: parseInt(userId)

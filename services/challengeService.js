@@ -47,7 +47,7 @@ export const createChallenge = async (req, res) => {
     }
 
     // Check if there's already a pending challenge between these users
-    const existingChallenge = await prisma.challenges.findFirst({
+    const existingChallenge = await prisma.Challenges.findFirst({
       where: {
         OR: [
           {
@@ -74,7 +74,7 @@ export const createChallenge = async (req, res) => {
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
 
-    const challenge = await prisma.challenges.create({
+    const challenge = await prisma.Challenges.create({
       data: {
         ChallengerId: challengerId,
         ChallengedId: challengedId,
@@ -154,7 +154,7 @@ export const getUserChallenges = async (req, res) => {
       whereClause.Status = status;
     }
 
-    const challenges = await prisma.challenges.findMany({
+    const challenges = await prisma.Challenges.findMany({
       where: whereClause, 
       include: {
         Users_Challenges_ChallengerIdToUsers: {
@@ -199,7 +199,7 @@ export const acceptChallenge = async (req, res) => {
     const { challengeId } = req.params;
     const { userId } = req.body;
 
-    const challenge = await prisma.challenges.findUnique({
+    const challenge = await prisma.Challenges.findUnique({
       where: { id: parseInt(challengeId) },
       include: {
         Users_Challenges_ChallengerIdToUsers: true,
@@ -222,7 +222,7 @@ export const acceptChallenge = async (req, res) => {
 
     // Check if challenge has expired
     if (new Date() > challenge.ExpiresAt) {
-      await prisma.challenges.update({
+      await prisma.Challenges.update({
         where: { id: parseInt(challengeId) },
         data: { Status: 'expired' }
       });
@@ -230,7 +230,7 @@ export const acceptChallenge = async (req, res) => {
     }
 
     // Update challenge status to accepted
-    const updatedChallenge = await prisma.challenges.update({
+    const updatedChallenge = await prisma.Challenges.update({
       where: { id: parseInt(challengeId) },
       data: { Status: 'accepted' },
       include: {
@@ -292,7 +292,7 @@ export const declineChallenge = async (req, res) => {
     const { challengeId } = req.params;
     const { userId } = req.body;
 
-    const challenge = await prisma.challenges.findUnique({
+    const challenge = await prisma.Challenges.findUnique({
       where: { id: parseInt(challengeId) }
     });
 
@@ -316,7 +316,7 @@ export const declineChallenge = async (req, res) => {
     });
 
     // Update challenge status to declined
-    const updatedChallenge = await prisma.challenges.update({
+    const updatedChallenge = await prisma.Challenges.update({
       where: { id: parseInt(challengeId) },
       data: { Status: 'declined' },
       include: {
@@ -373,7 +373,7 @@ export const declineChallenge = async (req, res) => {
  */
 export const updateChallengeWithDiscordThread = async (challengeId, threadId, threadUrl) => {
   try {
-    const updatedChallenge = await prisma.challenges.update({
+    const updatedChallenge = await prisma.Challenges.update({
       where: { id: challengeId },
       data: {
         DiscordThreadId: threadId,
@@ -395,7 +395,7 @@ export const getChallengeById = async (req, res) => {
   try {
     const { challengeId } = req.params;
 
-    const challenge = await prisma.challenges.findUnique({
+    const challenge = await prisma.Challenges.findUnique({
       where: { id: parseInt(challengeId) },
       include: {
         Users_Challenges_ChallengerIdToUsers: {
@@ -441,7 +441,7 @@ export const cancelChallenge = async (req, res) => {
     const { challengeId } = req.params;
     const { userId } = req.body;
 
-    const challenge = await prisma.challenges.findUnique({
+    const challenge = await prisma.Challenges.findUnique({
       where: { id: parseInt(challengeId) }
     });
 
@@ -459,7 +459,7 @@ export const cancelChallenge = async (req, res) => {
     }
 
     // Delete the challenge
-    await prisma.challenges.delete({
+    await prisma.Challenges.delete({
       where: { id: parseInt(challengeId) }
     });
 

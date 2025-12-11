@@ -52,6 +52,10 @@ export const validateToken = async (req, res) => {
     });
   } catch (error) {
     console.error('Token validation error:', error);
+    // Handle database connection errors
+    if (error.code === 'P1001') {
+      return res.status(503).send({ error: 'Database temporarily unavailable. Please try again.' });
+    }
     res.status(500).send({ error: 'Token validation failed' });
   }
 };
@@ -483,6 +487,73 @@ export const updateUserProfile = async (req, res) => {
   }
 };
 
+export const changePassword = async (req, res) => {
+  try {
+    const user = req.user;
+    
+    if (!user) {
+      return res.status(401).send({ message: 'User not authenticated' });
+    }
+
+    const { currentPassword, newPassword } = req.body;
+
+    if (newPassword.length < 6) {
+      return res.status(400).send({ message: 'New password must be at least 6 characters long' });
+    }
+
+    // Get user from database with password
+    const userData = await prisma.Users.findUnique({
+      where: { id: user.userId },
+      select: {
+        id: true,
+        Password: true
+      }
+    });
+
+    if (!userData) {
+      return res.status(404).send({ message: 'User not found' });
+    }
+
+    // Verify current password
+    const passwordMatch = await bcrypt.compare(currentPassword, userData.Password);
+    if (!passwordMatch) {
+      return res.status(400).send({ message: 'Current password is incorrect' });
+    }
+
+    // Check if new password is different from current password
+    const isSamePassword = await bcrypt.compare(newPassword, userData.Password);
+    if (isSamePassword) {
+      return res.status(400).send({ message: 'New password must be different from current password' });
+    }
+
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
+
+    // Update password in database
+    await prisma.Users.update({
+      where: { id: user.userId },
+      data: { 
+        Password: hashedPassword,
+        JWT: null // Invalidate current session - user must log in again
+      }
+    });
+
+    // Add current token to blacklist
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    if (token) {
+      tokenBlacklist.add(token);
+    }
+
+    res.status(200).send({ 
+      message: 'Password changed successfully. Please log in again.' 
+    });
+  } catch (err) {
+    console.error('Error changing password:', err);
+    res.status(500).send({ message: 'Failed to change password' });
+  }
+};
+
 // Upload avatar via Cloudinary
 export const uploadAvatar = async (req, res) => {
   try {
@@ -737,6 +808,10 @@ export const getRivals = async (req, res) => {
     res.status(200).send(rivals);
   } catch (err) {
     console.error('Error getting rivals:', err);
+    // Handle database connection errors
+    if (err.code === 'P1001') {
+      return res.status(503).send({ error: 'Database temporarily unavailable. Please try again.' });
+    }
     res.status(500).send({ message: 'Failed to get rivals' });
   }
 };

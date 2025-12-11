@@ -17,7 +17,7 @@ export const createDiscordThread = async (req, res) => {
     }
 
     // Find the challenge
-    const challenge = await prisma.challenges.findUnique({
+    const challenge = await prisma.Challenges.findUnique({
       where: { id: parseInt(challengeId) },
       include: {
         Users_Challenges_ChallengerIdToUsers: true,
@@ -66,7 +66,7 @@ export const getDiscordThreadInfo = async (req, res) => {
   try {
     const { challengeId } = req.params;
 
-    const challenge = await prisma.challenges.findUnique({
+    const challenge = await prisma.Challenges.findUnique({
       where: { id: parseInt(challengeId) },
       select: {
         id: true,
@@ -118,7 +118,7 @@ export const closeDiscordThread = async (req, res) => {
     const { challengeId } = req.params;
     const { userId } = req.body;
 
-    const challenge = await prisma.challenges.findUnique({
+    const challenge = await prisma.Challenges.findUnique({
       where: { id: parseInt(challengeId) },
       include: {
         Users_Challenges_ChallengerIdToUsers: true,
@@ -164,7 +164,7 @@ export const getUserDiscordThreads = async (req, res) => {
     const { userId } = req.params;
 
     // Get all challenges for the user that have Discord threads
-    const challenges = await prisma.challenges.findMany({
+    const challenges = await prisma.Challenges.findMany({
       where: {
         OR: [
           { ChallengerId: parseInt(userId) },
