@@ -151,6 +151,10 @@ app.get('/wallet/balance/:userId', geofence, walletService.getWalletBalance);
 app.get('/wallet/transactions/:userId', geofence, walletService.getTransactionHistory);
 app.post('/add-funds', geofence, userService.authenticateToken, walletService.addFunds);
 
+// CRUD add/withdraw methods specifically for venmo/cashapp
+app.post('/wallet/withdraw', geofence, userService.authenticateToken, walletService.withdrawFundsCRUD);
+app.post('/wallet/add', geofence, userService.authenticateToken, walletService.addFundsCRUD);
+
 // Matchmaking endpoints
 app.get('/matchmaking/suggestions/:userId', matchmakingController.getMatchSuggestions);
 app.get('/matchmaking/player-data/:userId', matchmakingController.getPlayerData);

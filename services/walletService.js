@@ -187,3 +187,59 @@ export const addFunds = async (req, res) => {
     res.status(500).send({ error: 'Failed to add funds' });
   }
 }; 
+
+// CRUD add/withdraw methods specifically for venmo/cashapp
+export const withdrawFundsCRUD = async (req, res) => {
+  console.log('withdrawFunds', req.body);
+  const amount = req.body.amount;
+  try {
+    const userId = req.user?.userId || req.user?.id;
+    if (!userId) return res.status(401).send({ error: 'User authentication required' });
+    
+    const user = await prisma.Users.findUnique({
+      where: { id: parseInt(userId) },
+      select: { id: true, Username: true, Wallet: true }
+    });
+
+    if (!user) return res.status(404).send({ error: 'User not found' });
+    
+    const wallet = user.Wallet;
+    if (wallet < amount) return res.status(400).send({ error: 'Insufficient funds' });
+
+    await prisma.Users.update({
+      where: { id: parseInt(userId) },
+      data: { Wallet: wallet - amount }
+    });
+
+    res.status(200).send({ message: 'Funds withdrawn successfully' });
+  } catch (err) {
+    console.error('Error withdrawing funds:', err);
+    res.status(500).send({ error: 'Failed to withdraw funds' });
+  }
+};
+
+export const addFundsCRUD = async (req, res) => {
+  console.log('addFunds', req.body);
+  const { amount } = req.body;
+  try {
+    const userId = req.user?.userId || req.user?.id;
+    if (!userId) return res.status(401).send({ error: 'User authentication required' });
+    
+    const user = await prisma.Users.findUnique({
+      where: { id: parseInt(userId) },
+      select: { id: true, Username: true, Wallet: true }
+    });
+
+    if (!user) return res.status(404).send({ error: 'User not found' });
+
+    await prisma.Users.update({
+      where: { id: parseInt(userId) },
+      data: { Wallet: user.Wallet + amount }
+    });
+
+    res.status(200).send({ message: 'Funds added successfully' });
+  } catch (err) {
+    console.error('Error adding funds:', err);
+    res.status(500).send({ error: 'Failed to add funds' });
+  }
+};
