@@ -115,7 +115,7 @@ export const registerUser = async(req, res) => {
             expiresIn: process.env.JWT_EXPIRES_IN,
         });
 
-        await emailService.sendVerificationEmail(email, token, username)
+        //await emailService.sendVerificationEmail(email, token, username)
 
         return res.status(200).send({message: "User created"})
     } catch(err) {

@@ -16,18 +16,22 @@ export const geofence = (req, res, next) => {
   const regionBlacklist = [
     'AL',
     'AK',
+    'AZ',
     'CA',
     'GA',
     'HI',
     'ID',
+    'LA',
     'MN',
     'MS',
+    'MT',
     'NM',
     'ND',
     //'NY', // Test only
     'OK',
     'SC',
     'SD',
+    'TN',
     'TX',
     'UT' 
   ];
