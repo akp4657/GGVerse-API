@@ -102,11 +102,25 @@ export const registerUser = async(req, res) => {
 
     try {
         const hashed = await bcrypt.hash(password, 12);
+
+        let nextMaxRank = await prisma.Users.findFirst({
+            orderBy: {
+                Rank: 'desc'
+            },
+            select: {
+                Rank: true
+            }
+        })
+
+        const newRank = nextMaxRank ? nextMaxRank.Rank + 1 : 1;
+
         const userObj = { 
             Username: username || email,
             Email: email,
             Password: hashed,
-            Wallet: 0
+            Wallet: 0,
+            Rank: newRank,
+            Authenticated: true
         };
 
         const newUser = await prisma.Users.create({data: userObj})
@@ -115,9 +129,24 @@ export const registerUser = async(req, res) => {
             expiresIn: process.env.JWT_EXPIRES_IN,
         });
 
+        await prisma.Users.update({
+            where: { id: newUser.id },
+            data: { JWT: token, Online: true }
+        });
+
         //await emailService.sendVerificationEmail(email, token, username)
 
-        return res.status(200).send({message: "User created"})
+        // Temporarily sending direct token
+        return res.status(200).send({
+          message: "User created",
+          token: token,
+          user: {
+            id: newUser.id,
+            email: newUser.Email,
+            username: newUser.Username,
+            wallet: newUser.Wallet,
+          }
+        })
     } catch(err) {
         console.log(err)
         return res.status(500).send({message: err.message})
