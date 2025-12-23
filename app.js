@@ -192,6 +192,8 @@ app.get('/api/user/discord/oauth-url', userService.authenticateToken, discordSer
 app.get('/api/user/discord/oauth/callback', discordService.handleOAuthCallback);
 app.get('/api/user/discord/status', userService.authenticateToken, discordService.getDiscordStatus);
 app.delete('/api/user/discord/unlink', userService.authenticateToken, discordService.unlinkDiscordAccount);
+// Discord bot endpoint for challenge verification (no auth required - bot uses its own verification)
+app.post('/api/discord/verify-challenge', geofence, discordService.handleDiscordVerification);
 
 // Email test endpoint (for development/testing)
 app.get('/api/test/email', async (req, res) => {

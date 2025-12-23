@@ -484,3 +484,117 @@ const createDiscordServerInviteAndDM = async (guildId, userId, username) => {
     };
   }
 };
+
+/**
+ * Handle Discord bot verification of challenge completion
+ * Creates match history and updates challenge status
+ */
+export const handleDiscordVerification = async (req, res) => {
+  try {
+    const { game, winnerDiscordId, loserDiscordId, discordThreadId } = req.query;
+
+    // Find users by Discord ID
+    const winner = await prisma.Users.findFirst({
+      where: { Discord: winnerDiscordId },
+      select: { id: true, Username: true }
+    });
+
+    const loser = await prisma.Users.findFirst({
+      where: { Discord: loserDiscordId },
+      select: { id: true, Username: true }
+    });
+
+    // Find the game by name to get game ID
+    const gameRecord = await prisma.Lookup_Game.findFirst({
+      where: { Game: game },
+      select: { id: true, Game: true }
+    });
+
+    if (!winner || !loser) {
+      return res.status(404).send({ 
+        message: 'One or both users not found by Discord ID',
+        winnerFound: !!winner,
+        loserFound: !!loser
+      });
+    }
+
+    // Find the challenge by challengeId or discordThreadId
+    let challenge =  await prisma.Challenges.findFirst({
+      where: { DiscordThreadId: discordThreadId }
+    });
+
+
+    if (!challenge) {
+      return res.status(404).send({ 
+        message: 'Challenge not found. Please provide challengeId or discordThreadId.' 
+      });
+    }
+
+    // Verify the users match the challenge
+    if (
+      (challenge.ChallengerId !== winner.id && challenge.ChallengerId !== loser.id) ||
+      (challenge.ChallengedId !== winner.id && challenge.ChallengedId !== loser.id)
+    ) {
+      return res.status(400).send({ 
+        message: 'Discord IDs do not match the challenge participants' 
+      });
+    }
+
+    // Determine P1 and P2 (P1 is challenger, P2 is challenged)
+    const p1Id = challenge.ChallengerId;
+    const p2Id = challenge.ChallengedId;
+    const p1Won = winner.id === p1Id;
+
+    // Create match history record
+    const matchHistory = await prisma.Match_History.create({
+      data: {
+        Game: gameRecord.id,
+        P1: p1Id,
+        P2: p2Id,
+        Status: 2, // Completed
+        Result: p1Won,
+        BetAmount: challenge.Wager || null
+      }
+    });
+
+    // Update challenge status to completed
+    await prisma.Challenges.update({
+      where: { id: challenge.id },
+      data: { Status: 'completed' }
+    });
+
+    await prisma.Users.update({
+      where: { id: winner.id },
+      data: { Wallet: { increment: challenge.Wager } }
+    });
+
+    await prisma.Users.update({
+      where: { id: loser.id },
+      data: { Wallet: { decrement: challenge.Wager } }
+    });
+
+
+    res.status(200).send({
+      success: true,
+      message: 'Match history created and challenge completed',
+      matchHistory: {
+        id: matchHistory.id,
+        game: gameRecord.Game,
+        winner: winner.Username,
+        loser: loser.Username,
+        betAmount: challenge.Wager
+      },
+      challenge: {
+        id: challenge.id,
+        status: 'completed'
+      }
+    });
+
+  } catch (error) {
+    console.error('Error handling Discord verification:', error);
+    res.status(500).send({ 
+      message: 'Failed to handle Discord verification',
+      error: error.message 
+    });
+  }
+}

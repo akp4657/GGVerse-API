@@ -390,7 +390,7 @@ export class MatchmakingService {
   }
 
   // Select top matches for a player
-  async selectTopMatches(playerId, limit = 3, gameId = null) {
+  async selectTopMatches(playerId, limit = 5, gameId = null) {
     // Get the player's Console to filter opponents by same Console
     const player = await prisma.Users.findUnique({
       where: { id: playerId },
