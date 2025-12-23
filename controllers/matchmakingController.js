@@ -6,7 +6,7 @@ const matchmakingService = new MatchmakingService();
 export const getMatchSuggestions = async (req, res) => {
   try {
     const { userId } = req.params;
-    const { limit = 3, gameId } = req.query;
+    const { limit = 5, gameId } = req.query;
     const gameIdInt = gameId ? parseInt(gameId) : null;
     
     const suggestions = await matchmakingService.selectTopMatches(parseInt(userId), parseInt(limit), gameIdInt);

@@ -491,7 +491,7 @@ const createDiscordServerInviteAndDM = async (guildId, userId, username) => {
  */
 export const handleDiscordVerification = async (req, res) => {
   try {
-    const { game, winnerDiscordId, loserDiscordId, discordThreadId } = req.query;
+    const { game, winnerDiscordId, loserDiscordId, discordThreadId } = req.body;
 
     // Find users by Discord ID
     const winner = await prisma.Users.findFirst({
