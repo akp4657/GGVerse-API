@@ -78,7 +78,7 @@ export const getPlayerRivalries = async (req, res) => {
     for (const [opponentId, heatScore] of Object.entries(playerData.rivalryProfile.rivalryHeatScores)) {
       const opponent = await prisma.Users.findUnique({
         where: { id: parseInt(opponentId) },
-        select: { id: true, Username: true, Avatar: true }
+        select: { id: true, Username: true, Avatar: true, Console: true }
       });
       
       if (opponent) {
@@ -150,7 +150,7 @@ export const getPotentialOpponents = async (req, res) => {
         Active: true,
         Console: player.Console // Filter by same Console
       },
-      select: { id: true, Username: true, Avatar: true }
+      select: { id: true, Username: true, Avatar: true, Console: true }
     });
 
     const potentialOpponents = allPlayers.map(p => p.id.toString());
@@ -177,7 +177,8 @@ export const getPotentialOpponents = async (req, res) => {
           opponent: {
             id: opponent.id,
             username: opponent.Username,
-            avatar: opponent.Avatar
+            avatar: opponent.Avatar,
+            console: opponent.Console
           }
         };
       })

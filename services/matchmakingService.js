@@ -402,14 +402,29 @@ export class MatchmakingService {
     }
 
     // Get all active players with the same Console except the current player
-    const allPlayers = await prisma.Users.findMany({
-      where: {
-        id: { not: playerId },
-        Active: true,
-        Console: player.Console // Filter by same Console
-      },
-      select: { id: true, Username: true, Avatar: true }
-    });
+    // Only filter by Console if it's not null/undefined
+    let allPlayers = [];
+    if (player.Console) {
+      allPlayers = await prisma.Users.findMany({
+        where: {
+          id: { not: playerId },
+          Active: true,
+          Console: player.Console // Filter by same Console
+        },
+        select: { id: true, Username: true, Avatar: true, Console: true }
+      });
+    }
+
+    // If no players found with same Console (or Console is null), fall back to all active players
+    if (allPlayers.length === 0) {
+      allPlayers = await prisma.Users.findMany({
+        where: {
+          id: { not: playerId },
+          Active: true
+        },
+        select: { id: true, Username: true, Avatar: true, Console: true }
+      });
+    }
 
     const potentialOpponents = allPlayers.map(p => p.id.toString());
     const sortedMatches = await this.calculateMMIScores(playerId, potentialOpponents, gameId);
@@ -424,13 +439,117 @@ export class MatchmakingService {
       });
     }
 
+    // If no ideal matches found, return all players with default MMI scores
+    if (topMatches.length === 0) {
+      
+      // Get player data once for the current player (to avoid repeated calls)
+      let playerData = null;
+      let playerMMI = 1000;
+      try {
+        playerData = await this.getPlayerData(playerId, gameId);
+        playerMMI = await this.getPlayerMMIForGame(playerId, gameId || 1);
+      } catch (error) {
+        console.error(`Error getting player data for ${playerId}:`, error);
+      }
+      
+      // Return all players formatted as match suggestions
+      // Use Promise.allSettled to handle individual failures gracefully
+      const allPlayerMatchesResults = await Promise.allSettled(
+        allPlayers.map(async (opponent) => {
+          // Calculate basic MMI score for each player
+          let mmiScore = 0.5; // Default score
+          let breakdown = {
+            skillScore: 0.5,
+            bettingScore: 0.5,
+            rivalryScore: 0.5
+          };
+
+          // Try to get actual MMI score if available
+          try {
+            const opponentData = await this.getPlayerData(opponent.id, gameId);
+            
+            // Calculate basic compatibility scores
+            const gameCompatibility = await this.calculateGameCompatibility(playerId, opponent.id, gameId);
+            const opponentMMI = await this.getPlayerMMIForGame(opponent.id, gameId || 1);
+            const mmiDiff = Math.abs(playerMMI - opponentMMI);
+            const maxMMIDiff = 1000;
+            const skillScore = Math.max(0, 1 - (mmiDiff / maxMMIDiff));
+            
+            const stakeDiff = playerData && opponentData 
+              ? Math.abs(playerData.bettingProfile.avgStakeSize - opponentData.bettingProfile.avgStakeSize)
+              : 50;
+            const maxStakeDiff = 100;
+            const bettingScore = Math.max(0, 1 - (stakeDiff / maxStakeDiff));
+            
+            const rivalryHeat = playerData?.rivalryProfile?.rivalryHeatScores?.[opponent.id] || 0;
+            const maxHeat = 10;
+            const rivalryScore = Math.min(1, rivalryHeat / maxHeat);
+            
+            mmiScore = (gameCompatibility * 0.30) + (skillScore * 0.30) + (bettingScore * 0.25) + (rivalryScore * 0.15);
+            breakdown = {
+              skillScore,
+              bettingScore,
+              rivalryScore
+            };
+          } catch (error) {
+            console.error(`Error calculating MMI for opponent ${opponent.id}:`, error);
+            // Use default scores if calculation fails
+          }
+
+          // Get incentives
+          let incentives = { bonusXP: 0, bonusCoins: 0 };
+          try {
+            incentives = await this.calculateIncentives(playerId, opponent.id);
+          } catch (error) {
+            console.error(`Error calculating incentives for opponent ${opponent.id}:`, error);
+          }
+
+          console.log(opponent);
+          return {
+            opponentId: opponent.id,
+            MMI_score: mmiScore,
+            breakdown: {
+              skillScore: breakdown.skillScore,
+              bettingScore: breakdown.bettingScore,
+              rivalryScore: breakdown.rivalryScore
+            },
+            opponent: {
+              id: opponent.id,
+              username: opponent.Username,
+              avatar: opponent.Avatar,
+              console: opponent.Console
+            },
+            gameType: gameInfo ? gameInfo.Game : null,
+            gameId: gameId,
+            incentives: incentives,
+            estimatedBetAmount: 50 // Default bet amount
+          };
+        })
+      );
+
+      // Filter out failed promises and extract successful results
+      const allPlayerMatches = allPlayerMatchesResults
+        .filter(result => result.status === 'fulfilled')
+        .map(result => result.value);
+
+      // Sort by MMI score (highest first) and return
+      const sortedMatches = allPlayerMatches.sort((a, b) => {
+        const aScore = typeof a.MMI_score === 'number' ? a.MMI_score : 0;
+        const bScore = typeof b.MMI_score === 'number' ? b.MMI_score : 0;
+        return bScore - aScore;
+      });
+      
+      return sortedMatches;
+    }
+
     // Add opponent details and incentives to each match
     for (const match of topMatches) {
       const opponent = allPlayers.find(p => p.id === match.opponentId);
       match.opponent = {
         id: opponent.id,
         username: opponent.Username,
-        avatar: opponent.Avatar
+        avatar: opponent.Avatar,
+        console: opponent.Console
       };
       match.gameType = gameInfo ? gameInfo.Game : null;
       match.gameId = gameId;
