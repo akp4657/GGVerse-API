@@ -35,7 +35,7 @@ export const validateToken = async (req, res) => {
   try {
     // Get user from database to check if they still exist and are authenticated
     const user = await prisma.Users.findUnique({
-      where: { id: req.user.userId || req.user.id }
+      where: { id: req.user.id }
     });
 
     if (!user) {
@@ -73,7 +73,7 @@ export const logout = async (req, res) => {
 
     // Clear JWT field in database
     await prisma.Users.update({
-      where: { id: req.user.userId || req.user.id },
+      where: { id: req.user.id },
       data: { JWT: null, Online: false }
     });
     
@@ -182,7 +182,7 @@ export const login = async(req, res) => {
         }
 
         const token = jwt.sign(
-            { userId: user.id, email: user.Email },
+            { id: user.id, email: user.Email },
             process.env.JWT_SECRET,
             { expiresIn: process.env.JWT_EXPIRES_IN || '1h' }
         );
@@ -263,7 +263,7 @@ export const getCurrentUser = async (req, res) => {
 
     // Get full user data from database
     const userData = await prisma.Users.findUnique({
-      where: { id: user.userId },
+      where: { id: user.id },
       select: {
         id: true,
         Username: true,
@@ -468,7 +468,7 @@ export const updateUserProfile = async (req, res) => {
       const existingUser = await prisma.Users.findFirst({
         where: {
           Username: updateData.Username,
-          id: { not: user.userId }
+          id: { not: user.id }
         }
       });
       
@@ -479,7 +479,7 @@ export const updateUserProfile = async (req, res) => {
 
     // Update user profile
     const updatedUser = await prisma.Users.update({
-      where: { id: user.userId },
+      where: { id: user.id },
       data: updateData,
       select: {
         id: true,
@@ -532,7 +532,7 @@ export const changePassword = async (req, res) => {
 
     // Get user from database with password
     const userData = await prisma.Users.findUnique({
-      where: { id: user.userId },
+      where: { id: user.id },
       select: {
         id: true,
         Password: true
@@ -560,7 +560,7 @@ export const changePassword = async (req, res) => {
 
     // Update password in database
     await prisma.Users.update({
-      where: { id: user.userId },
+      where: { id: user.id },
       data: { 
         Password: hashedPassword,
         JWT: null // Invalidate current session - user must log in again
@@ -598,12 +598,12 @@ export const uploadAvatar = async (req, res) => {
 
     // Get current user to check for existing avatar
     const currentUser = await prisma.Users.findUnique({
-      where: { id: user.userId },
+      where: { id: user.id },
       select: { Avatar: true }
     });
 
     // Upload to Cloudinary
-    const uploadResult = await cloudinaryService.uploadAvatar(req.file, user.userId);
+    const uploadResult = await cloudinaryService.uploadAvatar(req.file, user.id);
 
     // Delete old avatar from Cloudinary if it exists and is a Cloudinary URL
     if (currentUser?.Avatar) {
@@ -612,7 +612,7 @@ export const uploadAvatar = async (req, res) => {
 
     // Update user's avatar URL in database
     const updatedUser = await prisma.Users.update({
-      where: { id: user.userId },
+      where: { id: user.id },
       data: { Avatar: uploadResult.url },
       select: {
         id: true,
@@ -656,7 +656,7 @@ export const deleteAvatar = async (req, res) => {
 
     // Get current user's avatar
     const currentUser = await prisma.Users.findUnique({
-      where: { id: user.userId },
+      where: { id: user.id },
       select: { Avatar: true }
     });
 
@@ -669,7 +669,7 @@ export const deleteAvatar = async (req, res) => {
 
     // Update user's avatar to null in database
     const updatedUser = await prisma.Users.update({
-      where: { id: user.userId },
+      where: { id: user.id },
       data: { Avatar: null },
       select: {
         id: true,
@@ -696,7 +696,7 @@ export const deleteAvatar = async (req, res) => {
 export const addRival = async (req, res) => {
   try {
     const { rivalId } = req.body;
-    const userId = req.user.userId || req.user.id;
+    const userId = req.user.id;
 
     // Validate rivalId
     if (!rivalId || isNaN(parseInt(rivalId))) {
@@ -756,7 +756,7 @@ export const addRival = async (req, res) => {
 export const removeRival = async (req, res) => {
   try {
     const { rivalId } = req.params;
-    const userId = req.user.userId || req.user.id;
+    const userId = req.user.id;
 
     // Validate rivalId
     if (!rivalId || isNaN(parseInt(rivalId))) {
@@ -801,7 +801,7 @@ export const removeRival = async (req, res) => {
 // Get user's rivals with details
 export const getRivals = async (req, res) => {
   try {
-    const userId = req.user.userId
+    const userId = req.user.id
 
     // Get user with rivals
     const user = await prisma.Users.findUnique({
@@ -849,7 +849,7 @@ export const getRivals = async (req, res) => {
 export const addGame = async (req, res) => {
   try {
     const { gameId } = req.body;
-    const userId = req.user.userId;
+    const userId = req.user.id;
 
     // Validate gameId
     if (!gameId || isNaN(parseInt(gameId))) {
@@ -904,7 +904,7 @@ export const addGame = async (req, res) => {
 export const removeGame = async (req, res) => {
   try {
     const { gameId } = req.params;
-    const userId = req.user.userId;
+    const userId = req.user.id;
 
     // Validate gameId
     if (!gameId || isNaN(parseInt(gameId))) {
@@ -949,7 +949,7 @@ export const removeGame = async (req, res) => {
 // Get user's games with details
 export const getGames = async (req, res) => {
   try {
-    const userId = req.user.userId;
+    const userId = req.user.id;
 
     // Get user with games
     const user = await prisma.Users.findUnique({
@@ -1030,7 +1030,7 @@ export const getAllAvailableConsoles = async (req, res) => {
 // Store push token for user
 export const storePushToken = async (req, res) => {
   try {
-    const userId = req.user.userId || req.user.id;
+    const userId = req.user.id;
     const { pushToken } = req.body;
 
     if (!pushToken) {

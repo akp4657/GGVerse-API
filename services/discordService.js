@@ -29,7 +29,7 @@ export const getOAuthUrl = async (req, res) => {
     
     // Store state with user ID and timestamp (in production, use Redis/database)
     oauthStates.set(state, {
-      userId: req.user.userId,
+      userId: req.user.id,
       timestamp: Date.now()
     });
 
@@ -235,7 +235,7 @@ export const handleOAuthCallback = async (req, res) => {
 export const getDiscordStatus = async (req, res) => {
   try {
     const user = await prisma.Users.findUnique({
-      where: { id: req.user.userId },
+      where: { id: req.user.id },
       select: {
         id: true,
         Username: true,
@@ -297,7 +297,7 @@ export const getDiscordStatus = async (req, res) => {
 export const unlinkDiscordAccount = async (req, res) => {
   try {
     const updatedUser = await prisma.Users.update({
-      where: { id: req.user.userId },
+      where: { id: req.user.id },
       data: { Discord: null },
       select: {
         id: true,
