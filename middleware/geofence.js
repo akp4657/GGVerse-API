@@ -14,26 +14,34 @@ export const geofence = (req, res, next) => {
   
   //console.log('Geofence check - IP:', clientIP, '| Country:', country, '| Region:', region, '| City:', city);
   const regionBlacklist = [
-    'AL',
-    'AK',
+    // COMMENTING OLDER LIST
+    // 'AL',
+    // 'AK',
+    // 'AZ',
+    // 'CA',
+    // 'GA',
+    // 'HI',
+    // 'ID',
+    // 'LA',
+    // 'MN',
+    // 'MS',
+    // 'MT',
+    // 'NM',
+    // 'ND',
+    // //'NY', // Test only
+    // 'OK',
+    // 'SC',
+    // 'SD',
+    // 'TN',
+    // 'TX',
+    // // 'UT' 
+
     'AZ',
-    'CA',
-    'GA',
-    'HI',
-    'ID',
+    'AR',
+    'DE',
     'LA',
-    'MN',
-    'MS',
-    'MT',
-    'NM',
-    'ND',
-    //'NY', // Test only
-    'OK',
-    'SC',
     'SD',
-    'TN',
-    'TX',
-    'UT' 
+    'VT'
   ];
   
   if (regionBlacklist.includes(region)) {
