@@ -291,9 +291,22 @@ export const getCurrentUser = async (req, res) => {
 
     res.status(200).send({
       user: {
-        ...userData,
-        Wallet: userData.Wallet,
+        id: userData.id,
+        Username: userData.Username,
+        Email: userData.Email,
+        wallet: userData.Wallet,
+        Rank: userData.Rank,
+        Discord: userData.Discord,
+        Avatar: userData.Avatar,
+        Gamertag: userData.Gamertag,
+        Console: userData.Console,
+        Authenticated: userData.Authenticated,
+        Streak: userData.Streak,
         Earnings: userData.Earnings ? userData.Earnings : 0,
+        WinsLosses: userData.WinsLosses,
+        Badges: userData.Badges,
+        Rivals: userData.Rivals,
+        PaymentType: userData.PaymentType,
         //created_at: userData.created_at.toISOString()
       }
     });
