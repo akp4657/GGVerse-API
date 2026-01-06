@@ -352,7 +352,8 @@ export const getUserById = async (req, res) => {
         Earnings: true,
         MMI: true,
         Online: true,
-        Active: true
+        Active: true,
+        Games: true
       }
     });
 
