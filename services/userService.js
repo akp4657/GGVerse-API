@@ -142,9 +142,14 @@ export const registerUser = async(req, res) => {
           token: token,
           user: {
             id: newUser.id,
-            email: newUser.Email,
-            username: newUser.Username,
-            wallet: newUser.Wallet,
+            Email: newUser.Email,
+            Username: newUser.Username,
+            Wallet: newUser.Wallet,
+            Rank: newUser.Rank,
+            Avatar: newUser.Avatar,
+            Authenticated: newUser.Authenticated,
+            Badges: newUser.Badges || [],
+            JWT: token,
           }
         })
     } catch(err) {
@@ -199,14 +204,14 @@ export const login = async(req, res) => {
             verified: user.Authenticated,
             user: {
                 id: user.id,
-                email: user.Email,
-                username: user.Username,
-                wallet: user.Wallet,
-                rank: user.Rank,
-                avatar: user.Avatar,
-                authenticated: user.Authenticated,
-                badges: user.Badges,
-                jwt: user.JWT,
+                Email: user.Email,
+                Username: user.Username,
+                Wallet: user.Wallet,
+                Rank: user.Rank,
+                Avatar: user.Avatar,
+                Authenticated: user.Authenticated,
+                Badges: user.Badges,
+                JWT: user.JWT,
             }
         });
 
@@ -235,16 +240,16 @@ export const verifyEmail = async(req, res) => {
           token: token, 
           user: {
             id: user.id,
-            email: user.Email,
-            username: user.Username,
-            wallet: user.Wallet,
-            rank: user.Rank,
-            avatar: user.Avatar,
+            Email: user.Email,
+            Username: user.Username,
+            Wallet: user.Wallet,
+            Rank: user.Rank,
+            Avatar: user.Avatar,
             //createdAt: user.created_at,
             //updatedAt: user.created_at, // Using created_at since there's no updated_at field
-            authenticated: user.Authenticated,
-            badges: user.Badges,
-            jwt: user.JWT,
+            Authenticated: user.Authenticated,
+            Badges: user.Badges,
+            JWT: user.JWT,
           }});
     } catch(err) {
         console.log(err)
@@ -291,9 +296,22 @@ export const getCurrentUser = async (req, res) => {
 
     res.status(200).send({
       user: {
-        ...userData,
+        id: userData.id,
+        Username: userData.Username,
+        Email: userData.Email,
         Wallet: userData.Wallet,
+        Rank: userData.Rank,
+        Discord: userData.Discord,
+        Avatar: userData.Avatar,
+        Gamertag: userData.Gamertag,
+        Console: userData.Console,
+        Authenticated: userData.Authenticated,
+        Streak: userData.Streak,
         Earnings: userData.Earnings ? userData.Earnings : 0,
+        WinsLosses: userData.WinsLosses,
+        Badges: userData.Badges,
+        Rivals: userData.Rivals,
+        PaymentType: userData.PaymentType,
         //created_at: userData.created_at.toISOString()
       }
     });
@@ -352,7 +370,8 @@ export const getUserById = async (req, res) => {
         Earnings: true,
         MMI: true,
         Online: true,
-        Active: true
+        Active: true,
+        Games: true
       }
     });
 

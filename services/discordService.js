@@ -565,7 +565,7 @@ export const handleDiscordVerification = async (req, res) => {
 
     await prisma.Users.update({
       where: { id: winner.id },
-      data: { Wallet: { increment: challenge.Wager } }
+      data: { Wallet: { increment: challenge.Wager*2 } }
     });
 
     await prisma.Users.update({
