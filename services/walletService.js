@@ -146,7 +146,7 @@ export const getTransactionHistory = async (req, res) => {
 
 // Add funds to user wallet - supports PayNetWorx tokens via paymentMethodId
 export const addFunds = async (req, res) => {
-  console.log('addFunds', req.body);
+  //console.log('addFunds', req.body);
   try {
     const userId = req.user?.userId || req.user?.id;
     if (!userId) return res.status(401).send({ error: 'User authentication required' });
@@ -190,7 +190,7 @@ export const addFunds = async (req, res) => {
 
 // CRUD add/withdraw methods specifically for venmo/cashapp
 export const withdrawFundsCRUD = async (req, res) => {
-  console.log('withdrawFunds', req.body);
+  //console.log('withdrawFunds', req.body);
   const amount = req.body.amount;
   try {
     const userId = req.user?.userId || req.user?.id;
@@ -219,7 +219,7 @@ export const withdrawFundsCRUD = async (req, res) => {
 };
 
 export const addFundsCRUD = async (req, res) => {
-  console.log('addFunds', req.body);
+  //console.log('addFunds', req.body);
   const { amount } = req.body;
   try {
     const userId = req.user?.userId || req.user?.id;

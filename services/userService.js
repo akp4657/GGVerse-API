@@ -400,7 +400,7 @@ export const updateUserProfile = async (req, res) => {
 
     const { Username, Discord, Avatar, Gamertag, Console } = req.body;
 
-    console.log(req.body);
+    //console.log(req.body);
     // Validate input
     const updateData = {};
     
@@ -1038,7 +1038,7 @@ export const getAllAvailableConsoles = async (req, res) => {
       }
     });
 
-    console.log(consoles);
+    //console.log(consoles);
     res.status(200).send(consoles);
   } catch (err) {
     console.error('Error getting available consoles:', err);

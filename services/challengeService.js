@@ -6,16 +6,16 @@ import * as pushNotificationService from './pushNotificationService.js';
  */
 export const createChallenge = async (req, res) => {
   try {
-    const { challengerId, challengedId, game, wager } = req.body;
+    const { challengerId, challengedId, game, console, wager } = req.body;
 
     // Validate required fields
-    if (!challengerId || !challengedId || !game || !wager) {
+    if (!challengerId || !game || !wager) {
       return res.status(400).json({ 
-        error: 'Missing required fields: challengerId, challengedId, game, wager' 
+        error: 'Missing required fields: challengerId, game, wager' 
       });
     }
 
-    // Check if users exist and get push tokens
+    // Check if challenger exists
     const challenger = await prisma.Users.findUnique({ 
       where: { id: challengerId },
       select: {
@@ -26,48 +26,63 @@ export const createChallenge = async (req, res) => {
         PushToken: true
       }
     });
-    const challenged = await prisma.Users.findUnique({ 
-      where: { id: challengedId },
-      select: {
-        id: true,
-        Username: true,
-        Avatar: true,
-        MMI: true,
-        PushToken: true
-      }
-    });
 
-    if (!challenger || !challenged) {
-      return res.status(404).json({ error: 'One or both users not found' });
+    if (!challenger) {
+      return res.status(404).json({ error: 'Challenger not found' });
     }
 
-    // Prevent self-challenge
-    if (challengerId === challengedId) {
-      return res.status(400).json({ error: 'Cannot challenge yourself' });
-    }
-
-    // Check if there's already a pending challenge between these users
-    const existingChallenge = await prisma.Challenges.findFirst({
-      where: {
-        OR: [
-          {
-            ChallengerId: challengerId,
-            ChallengedId: challengedId,
-            Status: 'pending'
-          },
-          {
-            ChallengerId: challengedId,
-            ChallengedId: challengerId,
-            Status: 'pending'
-          }
-        ]
-      }
-    });
-
-    if (existingChallenge) {
-      return res.status(409).json({ 
-        error: 'A pending challenge already exists between these users' 
+    // Determine challenge status and validate challengedId
+    let status = 'pending';
+    let challenged = null;
+    
+    if (challengedId) {
+      // Traditional challenge with specific opponent
+      challenged = await prisma.Users.findUnique({ 
+        where: { id: challengedId },
+        select: {
+          id: true,
+          Username: true,
+          Avatar: true,
+          MMI: true,
+          PushToken: true
+        }
       });
+
+      if (!challenged) {
+        return res.status(404).json({ error: 'Challenged user not found' });
+      }
+
+      // Prevent self-challenge
+      if (challengerId === challengedId) {
+        return res.status(400).json({ error: 'Cannot challenge yourself' });
+      }
+
+      // Check if there's already a pending challenge between these users
+      const existingChallenge = await prisma.Challenges.findFirst({
+        where: {
+          OR: [
+            {
+              ChallengerId: challengerId,
+              ChallengedId: challengedId,
+              Status: 'pending'
+            },
+            {
+              ChallengerId: challengedId,
+              ChallengedId: challengerId,
+              Status: 'pending'
+            }
+          ]
+        }
+      });
+
+      if (existingChallenge) {
+        return res.status(409).json({ 
+          error: 'A pending challenge already exists between these users' 
+        });
+      }
+    } else {
+      // Open challenge - no specific opponent
+      status = 'open';
     }
 
     // Set expiration to 7 days from now
@@ -77,11 +92,12 @@ export const createChallenge = async (req, res) => {
     const challenge = await prisma.Challenges.create({
       data: {
         ChallengerId: challengerId,
-        ChallengedId: challengedId,
+        ChallengedId: challengedId || null,
         Game: game,
+        Console: console || null,
         Wager: parseFloat(wager),
         ExpiresAt: expiresAt,
-        Status: 'pending'
+        Status: status
       },
       include: {
         Users_Challenges_ChallengerIdToUsers: {
@@ -103,9 +119,9 @@ export const createChallenge = async (req, res) => {
       }
     });
 
-    // Send push notification to challenged user
-    try {
-      if (challenged.PushToken) {
+    // Send push notification to challenged user (only if not an open challenge)
+    if (challenged && challenged.PushToken) {
+      try {
         await pushNotificationService.sendChallengeNotification(
           challenged.PushToken,
           challenger.Username || 'Someone',
@@ -116,10 +132,10 @@ export const createChallenge = async (req, res) => {
             wager: challenge.Wager,
           }
         );
+      } catch (notificationError) {
+        // Don't fail challenge creation if notification fails
+        console.error('Error sending push notification for challenge:', notificationError);
       }
-    } catch (notificationError) {
-      // Don't fail challenge creation if notification fails
-      console.error('Error sending push notification for challenge:', notificationError);
     }
 
     res.status(201).send({
@@ -192,6 +208,58 @@ export const getUserChallenges = async (req, res) => {
 };
 
 /**
+ * Get all open challenges
+ */
+export const getOpenChallenges = async (req, res) => {
+  try {
+    const { game } = req.query;
+
+    let whereClause = {
+      Status: 'open',
+      ChallengedId: null
+    };
+
+    // Filter by game if provided
+    if (game) {
+      whereClause.Game = game;
+    }
+
+    // Exclude expired challenges
+    whereClause.ExpiresAt = {
+      gt: new Date()
+    };
+
+    const challenges = await prisma.Challenges.findMany({
+      where: whereClause,
+      include: {
+        Users_Challenges_ChallengerIdToUsers: {
+          select: {
+            id: true,
+            Username: true,
+            Avatar: true,
+            MMI: true
+          }
+        }
+      },
+      orderBy: [
+        { Game: 'asc' },
+        { CreatedAt: 'desc' }
+      ]
+    });
+
+    res.status(200).send({
+      message: 'Open challenges fetched successfully',
+      success: true,
+      challenges
+    });
+
+  } catch (error) {
+    console.error('Error fetching open challenges:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+/**
  * Accept a challenge
  */
 export const acceptChallenge = async (req, res) => {
@@ -211,15 +279,6 @@ export const acceptChallenge = async (req, res) => {
       return res.status(404).json({ error: 'Challenge not found' });
     }
 
-    // Verify the user is the challenged player
-    if (challenge.ChallengedId !== parseInt(userId)) {
-      return res.status(403).json({ error: 'Only the challenged player can accept this challenge' });
-    }
-
-    if (challenge.Status !== 'pending') {
-      return res.status(400).json({ error: 'Challenge is not pending' });
-    }
-
     // Check if challenge has expired
     if (new Date() > challenge.ExpiresAt) {
       await prisma.Challenges.update({
@@ -229,54 +288,138 @@ export const acceptChallenge = async (req, res) => {
       return res.status(400).json({ error: 'Challenge has expired' });
     }
 
-    // Update challenge status to accepted
-    const updatedChallenge = await prisma.Challenges.update({
-      where: { id: parseInt(challengeId) },
-      data: { Status: 'accepted' },
-      include: {
-        Users_Challenges_ChallengerIdToUsers: {
-          select: {
-            id: true,
-            Username: true,
-            Avatar: true,
-            MMI: true,
-            PushToken: true
-          }
+    // Handle open challenges vs regular challenges
+    if (challenge.Status === 'open') {
+      // Open challenge: any user can accept (except the challenger)
+      if (challenge.ChallengerId === parseInt(userId)) {
+        return res.status(400).json({ error: 'Cannot accept your own open challenge' });
+      }
+
+      // Get the challenged user info for notifications
+      const challengedUser = await prisma.Users.findUnique({
+        where: { id: parseInt(userId) },
+        select: {
+          id: true,
+          Username: true,
+          Avatar: true,
+          MMI: true,
+          PushToken: true
+        }
+      });
+
+      if (!challengedUser) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      // Update challenge: set ChallengedId and change status directly to accepted
+      // This treats it the same as accepting from ChallengeScreen
+      const updatedChallenge = await prisma.Challenges.update({
+        where: { id: parseInt(challengeId) },
+        data: { 
+          ChallengedId: parseInt(userId),
+          Status: 'accepted'
         },
-        Users_Challenges_ChallengedIdToUsers: {
-          select: {
-            id: true,
-            Username: true,
-            Avatar: true,
-            MMI: true,
-            PushToken: true
+        include: {
+          Users_Challenges_ChallengerIdToUsers: {
+            select: {
+              id: true,
+              Username: true,
+              Avatar: true,
+              MMI: true,
+              PushToken: true
+            }
+          },
+          Users_Challenges_ChallengedIdToUsers: {
+            select: {
+              id: true,
+              Username: true,
+              Avatar: true,
+              MMI: true,
+              PushToken: true
+            }
           }
         }
-      }
-    });
+      });
 
-    // Send push notification to challenger
-    try {
-      if (updatedChallenge.Users_Challenges_ChallengerIdToUsers.PushToken) {
-        await pushNotificationService.sendChallengeAcceptedNotification(
-          updatedChallenge.Users_Challenges_ChallengerIdToUsers.PushToken,
-          updatedChallenge.Users_Challenges_ChallengedIdToUsers.Username || 'Your opponent',
-          {
-            id: updatedChallenge.id,
-            challengedId: updatedChallenge.ChallengedId,
+      // Send push notification to challenger (same as regular challenge acceptance)
+      try {
+        if (updatedChallenge.Users_Challenges_ChallengerIdToUsers.PushToken) {
+          await pushNotificationService.sendChallengeAcceptedNotification(
+            updatedChallenge.Users_Challenges_ChallengerIdToUsers.PushToken,
+            updatedChallenge.Users_Challenges_ChallengedIdToUsers?.Username || 'Your opponent',
+            {
+              id: updatedChallenge.id,
+              challengedId: updatedChallenge.ChallengedId,
+            }
+          );
+        }
+      } catch (notificationError) {
+        // Don't fail challenge acceptance if notification fails
+        console.error('Error sending push notification for challenge acceptance:', notificationError);
+      }
+
+      res.status(200).send({
+        message: 'Challenge accepted successfully',
+        success: true,
+        challenge: updatedChallenge
+      });
+    } else if (challenge.Status === 'pending') {
+      // Regular challenge: verify the user is the challenged player
+      if (challenge.ChallengedId !== parseInt(userId)) {
+        return res.status(403).json({ error: 'Only the challenged player can accept this challenge' });
+      }
+
+      // Update challenge status to accepted
+      const updatedChallenge = await prisma.Challenges.update({
+        where: { id: parseInt(challengeId) },
+        data: { Status: 'accepted' },
+        include: {
+          Users_Challenges_ChallengerIdToUsers: {
+            select: {
+              id: true,
+              Username: true,
+              Avatar: true,
+              MMI: true,
+              PushToken: true
+            }
+          },
+          Users_Challenges_ChallengedIdToUsers: {
+            select: {
+              id: true,
+              Username: true,
+              Avatar: true,
+              MMI: true,
+              PushToken: true
+            }
           }
-        );
-      }
-    } catch (notificationError) {
-      // Don't fail challenge acceptance if notification fails
-      console.error('Error sending push notification for challenge acceptance:', notificationError);
-    }
+        }
+      });
 
-    res.status(200).send({
-      message: 'Challenge accepted successfully',
-      success: true,
-      challenge: updatedChallenge
-    });
+      // Send push notification to challenger
+      try {
+        if (updatedChallenge.Users_Challenges_ChallengerIdToUsers.PushToken) {
+          await pushNotificationService.sendChallengeAcceptedNotification(
+            updatedChallenge.Users_Challenges_ChallengerIdToUsers.PushToken,
+            updatedChallenge.Users_Challenges_ChallengedIdToUsers.Username || 'Your opponent',
+            {
+              id: updatedChallenge.id,
+              challengedId: updatedChallenge.ChallengedId,
+            }
+          );
+        }
+      } catch (notificationError) {
+        // Don't fail challenge acceptance if notification fails
+        console.error('Error sending push notification for challenge acceptance:', notificationError);
+      }
+
+      res.status(200).send({
+        message: 'Challenge accepted successfully',
+        success: true,
+        challenge: updatedChallenge
+      });
+    } else {
+      return res.status(400).json({ error: 'Challenge is not open or pending' });
+    }
 
   } catch (error) {
     console.error('Error accepting challenge:', error);

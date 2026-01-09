@@ -175,6 +175,7 @@ app.post('/badges/earn', badgeController.earnBadge);
 
 // Challenge endpoints
 app.post('/challenges', geofence, challengeService.createChallenge);
+app.get('/challenges/open', geofence, challengeService.getOpenChallenges);
 app.get('/challenges/user/:userId', geofence, challengeService.getUserChallenges);
 app.get('/challenges/:challengeId', geofence, challengeService.getChallengeById);
 app.post('/challenges/:challengeId/accept', geofence, challengeService.acceptChallenge);
