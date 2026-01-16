@@ -16,19 +16,35 @@ export const createChallenge = async (req, res) => {
     }
 
     // Check if challenger exists
-    const challenger = await prisma.Users.findUnique({ 
+    const challenger = await prisma.Users.findUnique({
       where: { id: challengerId },
       select: {
         id: true,
         Username: true,
         Avatar: true,
         MMI: true,
-        PushToken: true
+        PushToken: true,
+        Discord: true,
+        Wallet: true
       }
     });
 
     if (!challenger) {
       return res.status(404).json({ error: 'Challenger not found' });
+    }
+
+    // Validate Discord ID is linked
+    if (!challenger.Discord) {
+      return res.status(400).json({
+        error: 'Please link your Discord ID with GGVerse before creating a match'
+      });
+    }
+
+    // Validate wallet has sufficient balance for wager
+    if (challenger.Wallet < wager) {
+      return res.status(400).json({
+        error: 'Insufficient Balance. Please credit into your account to increase your wager limit'
+      });
     }
 
     // Determine challenge status and validate challengedId
