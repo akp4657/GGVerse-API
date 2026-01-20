@@ -114,11 +114,11 @@ export const registerUser = async(req, res) => {
 
         const newRank = nextMaxRank ? nextMaxRank.Rank + 1 : 1;
 
-        const userObj = { 
+        const userObj = {
             Username: username || email,
             Email: email,
             Password: hashed,
-            Wallet: 0,
+            Wallet: 20,
             Rank: newRank,
             Authenticated: true
         };
