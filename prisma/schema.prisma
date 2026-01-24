@@ -28,19 +28,21 @@ model BankAccount {
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model Challenges {
-  id                                   Int      @id @default(autoincrement())
+  id                                   Int                  @id @default(autoincrement())
   ChallengerId                         Int
   ChallengedId                         Int?
-  Game                                 String   @db.VarChar
-  Wager                                Decimal  @db.Decimal
-  Status                               String   @default("pending") @db.VarChar
-  CreatedAt                            DateTime @default(now()) @db.Timestamptz(6)
-  ExpiresAt                            DateTime @db.Timestamptz(6)
-  DiscordThreadId                      String?  @db.VarChar
-  DiscordThreadUrl                     String?  @db.VarChar
+  Game                                 String               @db.VarChar
+  Wager                                Decimal              @db.Decimal
+  Status                               String               @default("pending") @db.VarChar
+  CreatedAt                            DateTime             @default(now()) @db.Timestamptz(6)
+  ExpiresAt                            DateTime             @db.Timestamptz(6)
+  DiscordThreadId                      String?              @db.VarChar
+  DiscordThreadUrl                     String?              @db.VarChar
   Console                              Int?
-  Users_Challenges_ChallengedIdToUsers Users?   @relation("Challenges_ChallengedIdToUsers", fields: [ChallengedId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "Challenges_challengedId_fkey")
-  Users_Challenges_ChallengerIdToUsers Users    @relation("Challenges_ChallengerIdToUsers", fields: [ChallengerId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "Challenges_challengerId_fkey")
+  ChallengeRequests                    Int[]
+  Challenge_Requests                   Challenge_Requests[]
+  Users_Challenges_ChallengedIdToUsers Users?               @relation("Challenges_ChallengedIdToUsers", fields: [ChallengedId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "Challenges_challengedId_fkey")
+  Users_Challenges_ChallengerIdToUsers Users                @relation("Challenges_ChallengerIdToUsers", fields: [ChallengerId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "Challenges_challengerId_fkey")
 
   @@index([ChallengedId], map: "Challenges_challengedId_idx")
   @@index([ChallengerId], map: "Challenges_challengerId_idx")
@@ -154,37 +156,51 @@ model Transaction {
 }
 
 model Users {
-  id                                        Int                @id(map: "Test-User-Table_pkey") @default(autoincrement())
+  id                                        Int                  @id(map: "Test-User-Table_pkey") @default(autoincrement())
   Username                                  String?
-  Rank                                      Int                @unique @default(autoincrement())
-  Wallet                                    Int                @default(0)
-  PaymentType                               Int                @default(1)
+  Rank                                      Int                  @unique @default(autoincrement())
+  Wallet                                    Int                  @default(0)
+  PaymentType                               Int                  @default(1)
   Rivals                                    Int[]
   Badges                                    Int[]
-  Discord                                   String?            @db.VarChar
-  Avatar                                    String?            @db.VarChar
-  Authenticated                             Boolean            @default(true)
-  Password                                  String?            @db.VarChar
-  Email                                     String?            @unique @db.VarChar
-  WinsLosses                                Json?              @db.Json
-  Streak                                    Int?               @default(0)
+  Discord                                   String?              @db.VarChar
+  Avatar                                    String?              @db.VarChar
+  Authenticated                             Boolean              @default(true)
+  Password                                  String?              @db.VarChar
+  Email                                     String?              @unique @db.VarChar
+  WinsLosses                                Json?                @db.Json
+  Streak                                    Int?                 @default(0)
   Earnings                                  Int?
-  JWT                                       String?            @db.VarChar
-  Active                                    Boolean?           @default(true)
-  MMI                                       Json?              @default("{\"1\": 1000, \"2\": 1000, \"3\": 1000}") @db.Json
+  JWT                                       String?              @db.VarChar
+  Active                                    Boolean?             @default(true)
+  MMI                                       Json?                @default("{\"1\": 1000, \"2\": 1000, \"3\": 1000}") @db.Json
   LastMMIUpdate                             DateTime?
-  Online                                    Boolean?           @default(false)
-  Gamertag                                  String?            @db.VarChar
+  Online                                    Boolean?             @default(false)
+  Gamertag                                  String?              @db.VarChar
   Games                                     Int[]
-  Console                                   Int?               @default(1)
+  Console                                   Int?                 @default(1)
   PushToken                                 String?
+  KYC_Marker                                Boolean              @default(false)
   BankAccount                               BankAccount[]
-  Challenges_Challenges_ChallengedIdToUsers Challenges[]       @relation("Challenges_ChallengedIdToUsers")
-  Challenges_Challenges_ChallengerIdToUsers Challenges[]       @relation("Challenges_ChallengerIdToUsers")
-  Match_History_Match_History_P1ToUsers     Match_History[]    @relation("Match_History_P1ToUsers")
-  Match_History_Match_History_P2ToUsers     Match_History[]    @relation("Match_History_P2ToUsers")
+  Challenge_Requests                        Challenge_Requests[]
+  Challenges_Challenges_ChallengedIdToUsers Challenges[]         @relation("Challenges_ChallengedIdToUsers")
+  Challenges_Challenges_ChallengerIdToUsers Challenges[]         @relation("Challenges_ChallengerIdToUsers")
+  Match_History_Match_History_P1ToUsers     Match_History[]      @relation("Match_History_P1ToUsers")
+  Match_History_Match_History_P2ToUsers     Match_History[]      @relation("Match_History_P2ToUsers")
   PaymentMethod                             PaymentMethod[]
   Transaction                               Transaction[]
-  Lookup_Console                            Lookup_Console?    @relation(fields: [Console], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  Lookup_PaymentType                        Lookup_PaymentType @relation(fields: [PaymentType], references: [id], onDelete: SetDefault)
+  Lookup_Console                            Lookup_Console?      @relation(fields: [Console], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  Lookup_PaymentType                        Lookup_PaymentType   @relation(fields: [PaymentType], references: [id], onDelete: SetDefault)
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model Challenge_Requests {
+  id           Int        @id @default(autoincrement())
+  ChallengeId  Int
+  ChallengerId Int?
+  Wager        Int?
+  Status       String?    @default("request") @db.VarChar
+  createdAt    DateTime?  @default(now()) @db.Timestamptz(6)
+  Challenges   Challenges @relation(fields: [ChallengeId], references: [id], onDelete: Cascade)
+  Users        Users?     @relation(fields: [ChallengerId], references: [id], onDelete: Cascade)
 }
