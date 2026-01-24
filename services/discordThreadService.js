@@ -37,7 +37,7 @@ export const createDiscordThread = async (req, res) => {
     );
 
     // Create a Discord thread record in the existing Discord_Threads table
-    const discordThread = await prisma.discord_Threads.create({
+    const discordThread = await prisma.Discord_Threads.create({
       data: {
         ThreadId: threadId,
         Members: [challenge.ChallengerId, challenge.ChallengedId],
@@ -140,7 +140,7 @@ export const closeDiscordThread = async (req, res) => {
     }
 
     // Update the Discord thread to closed
-    await prisma.discord_Threads.updateMany({
+    await prisma.Discord_Threads.updateMany({
       where: { ThreadId: challenge.DiscordThreadId },
       data: { Open: false }
     });

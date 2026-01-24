@@ -563,14 +563,11 @@ export const handleDiscordVerification = async (req, res) => {
       data: { Status: 'completed' }
     });
 
+    // Award the pot (wager * 2) to the winner
+    // Both players already lost their wager when the challenge was accepted
     await prisma.Users.update({
       where: { id: winner.id },
       data: { Wallet: { increment: challenge.Wager*2 } }
-    });
-
-    await prisma.Users.update({
-      where: { id: loser.id },
-      data: { Wallet: { decrement: challenge.Wager } }
     });
 
 

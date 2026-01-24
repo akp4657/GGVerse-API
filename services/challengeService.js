@@ -135,6 +135,12 @@ export const createChallenge = async (req, res) => {
       }
     });
 
+    // Deduct wager from challenger when challenge is created
+    await prisma.Users.update({
+      where: { id: challengerId },
+      data: { Wallet: { decrement: parseFloat(wager) } }
+    });
+
     // Send push notification to challenged user (only if not an open challenge)
     if (challenged && challenged.PushToken) {
       try {
@@ -286,8 +292,20 @@ export const acceptChallenge = async (req, res) => {
     const challenge = await prisma.Challenges.findUnique({
       where: { id: parseInt(challengeId) },
       include: {
-        Users_Challenges_ChallengerIdToUsers: true,
-        Users_Challenges_ChallengedIdToUsers: true
+        Users_Challenges_ChallengerIdToUsers: {
+          select: {
+            id: true,
+            Username: true,
+            Wallet: true
+          }
+        },
+        Users_Challenges_ChallengedIdToUsers: {
+          select: {
+            id: true,
+            Username: true,
+            Wallet: true
+          }
+        }
       }
     });
 
@@ -311,7 +329,7 @@ export const acceptChallenge = async (req, res) => {
         return res.status(400).json({ error: 'Cannot accept your own open challenge' });
       }
 
-      // Get the challenged user info for notifications
+      // Get the challenged user info for notifications and wallet validation
       const challengedUser = await prisma.Users.findUnique({
         where: { id: parseInt(userId) },
         select: {
@@ -319,7 +337,8 @@ export const acceptChallenge = async (req, res) => {
           Username: true,
           Avatar: true,
           MMI: true,
-          PushToken: true
+          PushToken: true,
+          Wallet: true
         }
       });
 
@@ -327,6 +346,21 @@ export const acceptChallenge = async (req, res) => {
         return res.status(404).json({ error: 'User not found' });
       }
 
+      // Validate challenged user has sufficient wallet balance
+      // Challenger already paid when creating the challenge
+      if (challengedUser.Wallet < challenge.Wager) {
+        return res.status(400).json({
+          error: 'Insufficient Balance. Please credit into your account to increase your wager limit'
+        });
+      }
+
+      // Deduct wager from challenged user when challenge is accepted
+      // Challenger already paid when creating the challenge
+      await prisma.Users.update({
+        where: { id: parseInt(userId) },
+        data: { Wallet: { decrement: challenge.Wager } }
+      });
+      
       // Update challenge: set ChallengedId and change status directly to accepted
       // This treats it the same as accepting from ChallengeScreen
       const updatedChallenge = await prisma.Challenges.update({
@@ -384,6 +418,21 @@ export const acceptChallenge = async (req, res) => {
       if (challenge.ChallengedId !== parseInt(userId)) {
         return res.status(403).json({ error: 'Only the challenged player can accept this challenge' });
       }
+
+      // Validate challenged user has sufficient wallet balance
+      // Challenger already paid when creating the challenge
+      if (challenge.Users_Challenges_ChallengedIdToUsers && challenge.Users_Challenges_ChallengedIdToUsers.Wallet < challenge.Wager) {
+        return res.status(400).json({
+          error: 'Insufficient Balance. Please credit into your account to increase your wager limit'
+        });
+      }
+
+      // Deduct wager from challenged user when challenge is accepted
+      // Challenger already paid when creating the challenge
+      await prisma.Users.update({
+        where: { id: parseInt(userId) },
+        data: { Wallet: { decrement: challenge.Wager } }
+      });
 
       // Update challenge status to accepted
       const updatedChallenge = await prisma.Challenges.update({
