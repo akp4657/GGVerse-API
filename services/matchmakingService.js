@@ -504,7 +504,6 @@ export class MatchmakingService {
             console.error(`Error calculating incentives for opponent ${opponent.id}:`, error);
           }
 
-          console.log(opponent);
           return {
             opponentId: opponent.id,
             MMI_score: mmiScore,

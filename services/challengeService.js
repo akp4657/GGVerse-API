@@ -105,34 +105,48 @@ export const createChallenge = async (req, res) => {
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
 
-    const challenge = await prisma.Challenges.create({
-      data: {
-        ChallengerId: challengerId,
-        ChallengedId: challengedId || null,
-        Game: game,
-        Console: console || null,
-        Wager: parseFloat(wager),
-        ExpiresAt: expiresAt,
-        Status: status
-      },
-      include: {
-        Users_Challenges_ChallengerIdToUsers: {
-          select: {
-            id: true,
-            Username: true,
-            Avatar: true,
-            MMI: true
-          }
+    const wagerAmount = parseFloat(wager);
+
+    // Create challenge and deduct wallet in a transaction to ensure atomicity
+    const challenge = await prisma.$transaction(async (tx) => {
+      // Create the challenge
+      const newChallenge = await tx.Challenges.create({
+        data: {
+          ChallengerId: challengerId,
+          ChallengedId: challengedId || null,
+          Game: game,
+          Console: console || null,
+          Wager: wagerAmount,
+          ExpiresAt: expiresAt,
+          Status: status
         },
-        Users_Challenges_ChallengedIdToUsers: {
-          select: {
-            id: true,
-            Username: true,
-            Avatar: true,
-            MMI: true
+        include: {
+          Users_Challenges_ChallengerIdToUsers: {
+            select: {
+              id: true,
+              Username: true,
+              Avatar: true,
+              MMI: true
+            }
+          },
+          Users_Challenges_ChallengedIdToUsers: {
+            select: {
+              id: true,
+              Username: true,
+              Avatar: true,
+              MMI: true
+            }
           }
         }
-      }
+      });
+
+      // Deduct wager from challenger when challenge is created
+      await tx.Users.update({
+        where: { id: challengerId },
+        data: { Wallet: { decrement: wagerAmount } }
+      });
+
+      return newChallenge;
     });
 
     // Send push notification to challenged user (only if not an open challenge)
@@ -300,35 +314,6 @@ export const getUserChallenges = async (req, res) => {
       }
     });
 
-    // Log what's being returned for debugging
-    console.log('getUserChallenges - userId:', userId);
-    console.log('getUserChallenges - challenges count:', challenges.length);
-    console.log('getUserChallenges - openChallengesWithRequests count:', openChallengesWithRequests.length);
-    console.log('getUserChallenges - userRequests count:', userRequests.length);
-    console.log('getUserChallenges - challenges:', JSON.stringify(challenges.map(c => ({
-      id: c.id,
-      status: c.Status,
-      challengerId: c.ChallengerId,
-      challengedId: c.ChallengedId,
-      requestsCount: c.Challenge_Requests?.length || 0
-    })), null, 2));
-    
-    // Log detailed info about open challenges with requests
-    console.log('getUserChallenges - openChallengesWithRequests details:', JSON.stringify(openChallengesWithRequests.map(c => ({
-      id: c.id,
-      status: c.Status,
-      challengerId: c.ChallengerId,
-      challengedId: c.ChallengedId,
-      requestsCount: c.Challenge_Requests?.length || 0,
-      requests: c.Challenge_Requests?.map(r => ({
-        id: r.id,
-        challengerId: r.ChallengerId,
-        wager: r.Wager,
-        status: r.Status,
-        user: r.Users ? { id: r.Users.id, username: r.Users.Username } : null
-      })) || []
-    })), null, 2));
-
     res.status(200).send({
       message: 'Challenges fetched successfully',
       success: true,
@@ -403,11 +388,28 @@ export const acceptChallenge = async (req, res) => {
     const { challengeId } = req.params;
     const { userId, wager, requestId } = req.body;
 
+    // Validate required fields
+    if (!userId) {
+      return res.status(400).json({ error: 'userId is required' });
+    }
+
     const challenge = await prisma.Challenges.findUnique({
       where: { id: parseInt(challengeId) },
       include: {
-        Users_Challenges_ChallengerIdToUsers: true,
-        Users_Challenges_ChallengedIdToUsers: true
+        Users_Challenges_ChallengerIdToUsers: {
+          select: {
+            id: true,
+            Username: true,
+            Wallet: true
+          }
+        },
+        Users_Challenges_ChallengedIdToUsers: {
+          select: {
+            id: true,
+            Username: true,
+            Wallet: true
+          }
+        }
       }
     });
 
@@ -459,11 +461,48 @@ export const acceptChallenge = async (req, res) => {
           return res.status(404).json({ error: 'Request not found or already processed' });
         }
 
-        // Validate challenged user has sufficient balance
+        if (!challengeRequest.Users) {
+          return res.status(404).json({ error: 'User associated with request not found' });
+        }
+
         // Wager is stored in dollars
         const requestWager = challengeRequest.Wager;
-        if (challengeRequest.Users.Wallet < requestWager) {
-          return res.status(400).json({ error: 'Challenged player has insufficient balance' });
+        const originalWager = challenge.Wager;
+        
+        // Note: Wallet validation and deduction already happened when the request was created
+        // No need to check again here
+
+        // Adjust original challenger's wallet based on wager difference
+        // If final wager is more than original, challenger pays the difference
+        // If final wager is less than original, challenger gets a refund
+        if (requestWager !== originalWager) {
+          const wagerDifference = requestWager - originalWager;
+          
+          // Get challenger's current wallet to validate they can pay if needed
+          const challenger = await prisma.Users.findUnique({
+            where: { id: challenge.ChallengerId },
+            select: { Wallet: true }
+          });
+
+          if (wagerDifference > 0) {
+            // Final wager is higher - challenger needs to pay the difference
+            if (challenger.Wallet < wagerDifference) {
+              return res.status(400).json({
+                error: 'Insufficient balance. You need additional funds to accept this wager amount.'
+              });
+            }
+            // Deduct the difference from challenger
+            await prisma.Users.update({
+              where: { id: challenge.ChallengerId },
+              data: { Wallet: { decrement: wagerDifference } }
+            });
+          } else {
+            // Final wager is lower - challenger gets a refund
+            await prisma.Users.update({
+              where: { id: challenge.ChallengerId },
+              data: { Wallet: { increment: Math.abs(wagerDifference) } }
+            });
+          }
         }
 
         // Update selected request to accepted
@@ -580,7 +619,7 @@ export const acceptChallenge = async (req, res) => {
         }
 
         return res.status(200).send({
-          message: 'Challenge request accepted successfully',
+          message: 'Challenge request sent successfully',
           success: true,
           challenge: updatedChallenge
         });
@@ -628,13 +667,29 @@ export const acceptChallenge = async (req, res) => {
         if (isNaN(wagerAmount) || wagerAmount <= 0) {
           return res.status(400).json({ error: 'Invalid wager amount' });
         }
+        // Validate challenged user has sufficient wallet balance
         if (challengedUser.Wallet < wagerAmount) {
-          return res.status(400).json({ error: 'Insufficient balance for the requested wager amount' });
+          return res.status(400).json({
+            error: 'Insufficient Balance. Please credit into your account to increase your wager limit'
+          });
         }
         finalWager = wagerAmount;
       } else {
         finalWager = parseFloat(challenge.Wager);
+        // Validate challenged user has sufficient wallet balance for default wager
+        if (challengedUser.Wallet < finalWager) {
+          return res.status(400).json({
+            error: 'Insufficient Balance. Please credit into your account to increase your wager limit'
+          });
+        }
       }
+
+      // Deduct wager from challenged user when they create a request for an open challenge
+      // Challenger already paid when creating the challenge
+      await prisma.Users.update({
+        where: { id: parseInt(userId) },
+        data: { Wallet: { decrement: finalWager } }
+      });
 
       // Create a new ChallengeRequest instead of updating the challenge
       // Challenge stays 'open' and ChallengedId remains null
@@ -731,18 +786,30 @@ export const acceptChallenge = async (req, res) => {
         if (isNaN(wagerAmount) || wagerAmount <= 0) {
           return res.status(400).json({ error: 'Invalid wager amount' });
         }
+        // Validate challenged user has sufficient wallet balance
         if (challengedUser && challengedUser.Wallet < wagerAmount) {
-          return res.status(400).json({ error: 'Insufficient balance for the requested wager amount' });
+          return res.status(400).json({
+            error: 'Insufficient Balance. Please credit into your account to increase your wager limit'
+          });
         }
         finalWager = wagerAmount;
+      } else {
+        // Validate challenged user has sufficient wallet balance for default wager
+        if (challengedUser && challengedUser.Wallet < challenge.Wager) {
+          return res.status(400).json({
+            error: 'Insufficient Balance. Please credit into your account to increase your wager limit'
+          });
+        }
       }
+
+      // Note: Wallet deduction does NOT happen for pending challenges
+      // Both users' wallets were already deducted when the challenge was created
 
       // Update challenge status to accepted, and wager if modified
       const updateData = { Status: 'accepted' };
       if (wager !== undefined && wager !== null && parseFloat(wager) !== challenge.Wager) {
         updateData.Wager = finalWager;
       }
-
       const updatedChallenge = await prisma.Challenges.update({
         where: { id: parseInt(challengeId) },
         data: updateData,
@@ -913,6 +980,15 @@ export const declineChallenge = async (req, res) => {
       if (!isOriginalChallenger && !isRequestCreator) {
         return res.status(403).json({ error: 'You do not have permission to decline this request' });
       }
+
+      // Refund Player B's wager when request is declined
+      // Player B's wallet was deducted when they created the request, so they need a refund
+      // This applies whether Player A declines the request OR Player B declines their own request
+      const requestWager = challengeRequest.Wager;
+      await prisma.Users.update({
+        where: { id: challengeRequest.ChallengerId }, // Player B who created the request
+        data: { Wallet: { increment: requestWager } }
+      });
 
       // Update request status to declined
       await prisma.Challenge_Requests.update({

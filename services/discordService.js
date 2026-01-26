@@ -498,15 +498,18 @@ export const handleDiscordVerification = async (req, res) => {
     console.log('loserDiscordId', loserDiscordId);
     console.log('discordThreadId', discordThreadId);
     // Find users by Discord ID
-    const winner = await prisma.Users.findFirst({
+    const winner = await prisma.Users.findUnique({
       where: { Discord: winnerDiscordId },
-      select: { id: true, Username: true }
+      select: { id: true, Username: true, Discord: true }
     });
 
-    const loser = await prisma.Users.findFirst({
+    const loser = await prisma.Users.findUnique({
       where: { Discord: loserDiscordId },
-      select: { id: true, Username: true }
+      select: { id: true, Username: true, Discord: true }
     });
+
+    console.log('winner', winner);
+    console.log('loser', loser);
 
     // Find the game by name to get game ID
     const gameRecord = await prisma.Lookup_Game.findFirst({
@@ -544,24 +547,14 @@ export const handleDiscordVerification = async (req, res) => {
       });
     }
 
-    // Determine P1 and P2
-    // P1 is the player who accepted (ChallengedId)
-    // P2 is the player who made the challenge (ChallengerId)
-    const p1Id = challenge.ChallengedId;  // Player B (who accepted)
-    const p2Id = challenge.ChallengerId;  // Player A (who made challenge)
-    const p1Won = winner.id === p1Id;
-
-    console.log('p1Id', p1Id);
-    console.log('p2Id', p2Id);
-    console.log('p1Won', p1Won);
     // Create match history record
     const matchHistory = await prisma.Match_History.create({
       data: {
         Game: gameRecord.id,
-        P1: p1Id, // WinnerID
-        P2: p2Id, // LoserID
+        P1: winner.id, // WinnerID
+        P2: loser.id, // LoserID
         Status: 2, // Completed
-        Result: p1Won, // To be deleted, default true
+        Result: true, // To be deleted, default true
         BetAmount: challenge.Wager || null
       }
     });
@@ -572,14 +565,11 @@ export const handleDiscordVerification = async (req, res) => {
       data: { Status: 'completed' }
     });
 
+    // Award the pot (wager * 2) to the winner
+    // Both players already lost their wager when the challenge was accepted
     await prisma.Users.update({
       where: { id: winner.id },
       data: { Wallet: { increment: challenge.Wager*2 } }
-    });
-
-    await prisma.Users.update({
-      where: { id: loser.id },
-      data: { Wallet: { decrement: challenge.Wager } }
     });
 
 
