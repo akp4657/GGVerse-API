@@ -178,6 +178,7 @@ app.post('/challenges', geofence, challengeService.createChallenge);
 app.get('/challenges/open', geofence, challengeService.getOpenChallenges);
 app.get('/challenges/user/:userId', geofence, challengeService.getUserChallenges);
 app.get('/challenges/:challengeId', geofence, challengeService.getChallengeById);
+app.get('/challenges/:challengeId/requests', geofence, challengeService.getChallengeRequests);
 app.post('/challenges/:challengeId/accept', geofence, challengeService.acceptChallenge);
 app.post('/challenges/:challengeId/decline', geofence, challengeService.declineChallenge);
 app.delete('/challenges/:challengeId', geofence, challengeService.cancelChallenge);

@@ -163,7 +163,7 @@ model Users {
   PaymentType                               Int                  @default(1)
   Rivals                                    Int[]
   Badges                                    Int[]
-  Discord                                   String?              @db.VarChar
+  Discord                                   String?              @unique @db.VarChar
   Avatar                                    String?              @db.VarChar
   Authenticated                             Boolean              @default(true)
   Password                                  String?              @db.VarChar

@@ -493,16 +493,23 @@ export const handleDiscordVerification = async (req, res) => {
   try {
     const { game, winnerDiscordId, loserDiscordId, discordThreadId } = req.body;
 
+    console.log('game', game);
+    console.log('winnerDiscordId', winnerDiscordId);
+    console.log('loserDiscordId', loserDiscordId);
+    console.log('discordThreadId', discordThreadId);
     // Find users by Discord ID
-    const winner = await prisma.Users.findFirst({
+    const winner = await prisma.Users.findUnique({
       where: { Discord: winnerDiscordId },
-      select: { id: true, Username: true }
+      select: { id: true, Username: true, Discord: true }
     });
 
-    const loser = await prisma.Users.findFirst({
+    const loser = await prisma.Users.findUnique({
       where: { Discord: loserDiscordId },
-      select: { id: true, Username: true }
+      select: { id: true, Username: true, Discord: true }
     });
+
+    console.log('winner', winner);
+    console.log('loser', loser);
 
     // Find the game by name to get game ID
     const gameRecord = await prisma.Lookup_Game.findFirst({
@@ -540,19 +547,14 @@ export const handleDiscordVerification = async (req, res) => {
       });
     }
 
-    // Determine P1 and P2 (P1 is challenger, P2 is challenged)
-    const p1Id = challenge.ChallengerId;
-    const p2Id = challenge.ChallengedId;
-    const p1Won = winner.id === p1Id;
-
     // Create match history record
     const matchHistory = await prisma.Match_History.create({
       data: {
         Game: gameRecord.id,
-        P1: p1Id,
-        P2: p2Id,
+        P1: winner.id, // WinnerID
+        P2: loser.id, // LoserID
         Status: 2, // Completed
-        Result: p1Won,
+        Result: true, // To be deleted, default true
         BetAmount: challenge.Wager || null
       }
     });

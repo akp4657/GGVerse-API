@@ -105,40 +105,48 @@ export const createChallenge = async (req, res) => {
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
 
-    const challenge = await prisma.Challenges.create({
-      data: {
-        ChallengerId: challengerId,
-        ChallengedId: challengedId || null,
-        Game: game,
-        Console: console || null,
-        Wager: parseFloat(wager),
-        ExpiresAt: expiresAt,
-        Status: status
-      },
-      include: {
-        Users_Challenges_ChallengerIdToUsers: {
-          select: {
-            id: true,
-            Username: true,
-            Avatar: true,
-            MMI: true
-          }
+    const wagerAmount = parseFloat(wager);
+
+    // Create challenge and deduct wallet in a transaction to ensure atomicity
+    const challenge = await prisma.$transaction(async (tx) => {
+      // Create the challenge
+      const newChallenge = await tx.Challenges.create({
+        data: {
+          ChallengerId: challengerId,
+          ChallengedId: challengedId || null,
+          Game: game,
+          Console: console || null,
+          Wager: wagerAmount,
+          ExpiresAt: expiresAt,
+          Status: status
         },
-        Users_Challenges_ChallengedIdToUsers: {
-          select: {
-            id: true,
-            Username: true,
-            Avatar: true,
-            MMI: true
+        include: {
+          Users_Challenges_ChallengerIdToUsers: {
+            select: {
+              id: true,
+              Username: true,
+              Avatar: true,
+              MMI: true
+            }
+          },
+          Users_Challenges_ChallengedIdToUsers: {
+            select: {
+              id: true,
+              Username: true,
+              Avatar: true,
+              MMI: true
+            }
           }
         }
-      }
-    });
+      });
 
-    // Deduct wager from challenger when challenge is created
-    await prisma.Users.update({
-      where: { id: challengerId },
-      data: { Wallet: { decrement: parseFloat(wager) } }
+      // Deduct wager from challenger when challenge is created
+      await tx.Users.update({
+        where: { id: challengerId },
+        data: { Wallet: { decrement: wagerAmount } }
+      });
+
+      return newChallenge;
     });
 
     // Send push notification to challenged user (only if not an open challenge)
@@ -174,6 +182,7 @@ export const createChallenge = async (req, res) => {
 
 /**
  * Get all challenges for a user (as challenger or challenged)
+ * Note: Open challenges are excluded - they should only appear in marketplace
  */
 export const getUserChallenges = async (req, res) => {
   try {
@@ -184,10 +193,12 @@ export const getUserChallenges = async (req, res) => {
       OR: [
         { ChallengerId: parseInt(userId) },
         { ChallengedId: parseInt(userId) }
-      ]
+      ],
+      // Exclude open challenges - they should only appear in marketplace
+      Status: { not: 'open' }
     };
 
-    // Filter by status if provided
+    // Filter by status if provided (but still exclude 'open')
     if (status && ['pending', 'accepted', 'declined', 'expired'].includes(status)) {
       whereClause.Status = status;
     }
@@ -210,6 +221,26 @@ export const getUserChallenges = async (req, res) => {
             Avatar: true,
             MMI: true
           }
+        },
+        // Include pending requests for challenges where user is challenger
+        // Note: Only for non-open challenges that have requests
+        Challenge_Requests: {
+          where: {
+            Status: 'request'
+          },
+          include: {
+            Users: {
+              select: {
+                id: true,
+                Username: true,
+                Avatar: true,
+                MMI: true
+              }
+            }
+          },
+          orderBy: {
+            createdAt: 'desc'
+          }
         }
       },
       orderBy: {
@@ -217,10 +248,78 @@ export const getUserChallenges = async (req, res) => {
       }
     });
 
+    // Get open challenges where user is challenger to show their pending requests
+    // These are returned separately so frontend can display requests for open challenges
+    const openChallengesWithRequests = await prisma.Challenges.findMany({
+      where: {
+        ChallengerId: parseInt(userId),
+        Status: 'open'
+      },
+      include: {
+        Users_Challenges_ChallengerIdToUsers: {
+          select: {
+            id: true,
+            Username: true,
+            Avatar: true,
+            MMI: true
+          }
+        },
+        Challenge_Requests: {
+          where: {
+            Status: 'request'
+          },
+          include: {
+            Users: {
+              select: {
+                id: true,
+                Username: true,
+                Avatar: true,
+                MMI: true
+              }
+            }
+          },
+          orderBy: {
+            createdAt: 'desc'
+          }
+        }
+      },
+      orderBy: {
+        CreatedAt: 'desc'
+      }
+    });
+
+    // Also get requests where user created the request (ChallengerId in Challenge_Requests is the person creating the request)
+    // Include both pending ('request') and declined requests so users can see their declined requests
+    const userRequests = await prisma.Challenge_Requests.findMany({
+      where: {
+        ChallengerId: parseInt(userId), // Person who created the request
+        //Status: 'request'
+      },
+      include: {
+        Challenges: {
+          include: {
+            Users_Challenges_ChallengerIdToUsers: {
+              select: {
+                id: true,
+                Username: true,
+                Avatar: true,
+                MMI: true
+              }
+            }
+          }
+        }
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
+
     res.status(200).send({
       message: 'Challenges fetched successfully',
       success: true,
-      challenges
+      challenges,
+      openChallengesWithRequests, // Open challenges with requests (for displaying requests to challenger)
+      requests: userRequests // Requests where user created the request
     });
 
   } catch (error) {
@@ -287,7 +386,12 @@ export const getOpenChallenges = async (req, res) => {
 export const acceptChallenge = async (req, res) => {
   try {
     const { challengeId } = req.params;
-    const { userId } = req.body;
+    const { userId, wager, requestId } = req.body;
+
+    // Validate required fields
+    if (!userId) {
+      return res.status(400).json({ error: 'userId is required' });
+    }
 
     const challenge = await prisma.Challenges.findUnique({
       where: { id: parseInt(challengeId) },
@@ -324,7 +428,204 @@ export const acceptChallenge = async (req, res) => {
 
     // Handle open challenges vs regular challenges
     if (challenge.Status === 'open') {
-      // Open challenge: any user can accept (except the challenger)
+      // If requestId is provided, challenger is accepting a specific request
+      if (requestId) {
+        // Challenger accepting a specific request for an open challenge
+        if (challenge.ChallengerId !== parseInt(userId)) {
+          return res.status(403).json({ error: 'Only the challenger can accept requests for this challenge' });
+        }
+
+        // Find the request
+        const challengeRequest = await prisma.Challenge_Requests.findFirst({
+          where: {
+            id: parseInt(requestId),
+            ChallengeId: parseInt(challengeId),
+            Status: 'request'
+          },
+          include: {
+            Users: {
+              select: {
+                id: true,
+                Username: true,
+                Avatar: true,
+                MMI: true,
+                PushToken: true,
+                Discord: true,
+                Wallet: true
+              }
+            }
+          }
+        });
+
+        if (!challengeRequest) {
+          return res.status(404).json({ error: 'Request not found or already processed' });
+        }
+
+        if (!challengeRequest.Users) {
+          return res.status(404).json({ error: 'User associated with request not found' });
+        }
+
+        // Wager is stored in dollars
+        const requestWager = challengeRequest.Wager;
+        const originalWager = challenge.Wager;
+        
+        // Note: Wallet validation and deduction already happened when the request was created
+        // No need to check again here
+
+        // Adjust original challenger's wallet based on wager difference
+        // If final wager is more than original, challenger pays the difference
+        // If final wager is less than original, challenger gets a refund
+        if (requestWager !== originalWager) {
+          const wagerDifference = requestWager - originalWager;
+          
+          // Get challenger's current wallet to validate they can pay if needed
+          const challenger = await prisma.Users.findUnique({
+            where: { id: challenge.ChallengerId },
+            select: { Wallet: true }
+          });
+
+          if (wagerDifference > 0) {
+            // Final wager is higher - challenger needs to pay the difference
+            if (challenger.Wallet < wagerDifference) {
+              return res.status(400).json({
+                error: 'Insufficient balance. You need additional funds to accept this wager amount.'
+              });
+            }
+            // Deduct the difference from challenger
+            await prisma.Users.update({
+              where: { id: challenge.ChallengerId },
+              data: { Wallet: { decrement: wagerDifference } }
+            });
+          } else {
+            // Final wager is lower - challenger gets a refund
+            await prisma.Users.update({
+              where: { id: challenge.ChallengerId },
+              data: { Wallet: { increment: Math.abs(wagerDifference) } }
+            });
+          }
+        }
+
+        // Update selected request to accepted
+        await prisma.Challenge_Requests.update({
+          where: { id: parseInt(requestId) },
+          data: { Status: 'accepted' }
+        });
+
+        // Deny all other requests for this challenge (set to 'denied' so they can still be tracked)
+        const deniedRequests = await prisma.Challenge_Requests.findMany({
+          where: {
+            ChallengeId: parseInt(challengeId),
+            id: { not: parseInt(requestId) },
+            Status: 'request'
+          },
+          include: {
+            Users: {
+              select: {
+                id: true,
+                Username: true,
+                PushToken: true
+              }
+            }
+          }
+        });
+
+        // Update all other requests to 'denied' status
+        await prisma.Challenge_Requests.updateMany({
+          where: {
+            ChallengeId: parseInt(challengeId),
+            id: { not: parseInt(requestId) },
+            Status: 'request'
+          },
+          data: { Status: 'declined' }
+        });
+
+        // Update ChallengeRequests array - remove all request IDs since challenge is now accepted
+        // The challenge is no longer open, so we clear the requests array
+        await prisma.Challenges.update({
+          where: { id: parseInt(challengeId) },
+          data: {
+            ChallengeRequests: []
+          }
+        });
+
+        // Update challenge: set ChallengedId, Status, and Wager
+        // ChallengerId in Challenge_Requests is the person who created the request (Player B)
+        // This becomes the ChallengedId in the Challenges table
+        const updatedChallenge = await prisma.Challenges.update({
+          where: { id: parseInt(challengeId) },
+          data: {
+            ChallengedId: challengeRequest.ChallengerId, // Person who created the request (Player B)
+            Status: 'accepted',
+            Wager: requestWager
+          },
+          include: {
+            Users_Challenges_ChallengerIdToUsers: {
+              select: {
+                id: true,
+                Username: true,
+                Avatar: true,
+                MMI: true,
+                PushToken: true,
+                Discord: true
+              }
+            },
+            Users_Challenges_ChallengedIdToUsers: {
+              select: {
+                id: true,
+                Username: true,
+                Avatar: true,
+                MMI: true,
+                PushToken: true,
+                Discord: true
+              }
+            }
+          }
+        });
+
+        // Send notifications to users whose requests were denied
+        try {
+          for (const deniedRequest of deniedRequests) {
+            if (deniedRequest.Users?.PushToken) {
+              await pushNotificationService.sendChallengeDeclinedNotification(
+                deniedRequest.Users.PushToken,
+                updatedChallenge.Users_Challenges_ChallengerIdToUsers.Username || 'Your opponent',
+                {
+                  id: updatedChallenge.id,
+                  challengerId: updatedChallenge.ChallengerId,
+                }
+              );
+            }
+          }
+        } catch (notificationError) {
+          console.error('Error sending push notifications for declined requests:', notificationError);
+        }
+
+        // Discord thread will be created by frontend when it detects status is 'accepted'
+
+        // Send push notification to challenged user
+        try {
+          if (challengeRequest.Users?.PushToken) {
+            await pushNotificationService.sendChallengeAcceptedNotification(
+              challengeRequest.Users.PushToken,
+              updatedChallenge.Users_Challenges_ChallengerIdToUsers.Username || 'Your opponent',
+              {
+                id: updatedChallenge.id,
+                challengerId: updatedChallenge.ChallengerId,
+              }
+            );
+          }
+        } catch (notificationError) {
+          console.error('Error sending push notification for challenge acceptance:', notificationError);
+        }
+
+        return res.status(200).send({
+          message: 'Challenge request sent successfully',
+          success: true,
+          challenge: updatedChallenge
+        });
+      }
+
+      // Open challenge: any user can accept (except the challenger) - creates a request
       if (challenge.ChallengerId === parseInt(userId)) {
         return res.status(400).json({ error: 'Cannot accept your own open challenge' });
       }
@@ -346,31 +647,62 @@ export const acceptChallenge = async (req, res) => {
         return res.status(404).json({ error: 'User not found' });
       }
 
-      // Validate challenged user has sufficient wallet balance
-      // Challenger already paid when creating the challenge
-      if (challengedUser.Wallet < challenge.Wager) {
-        return res.status(400).json({
-          error: 'Insufficient Balance. Please credit into your account to increase your wager limit'
-        });
+      // Check if user already has a pending request for this challenge
+      const existingRequest = await prisma.Challenge_Requests.findFirst({
+        where: {
+          ChallengeId: parseInt(challengeId),
+          ChallengerId: parseInt(userId),
+          Status: 'request'
+        }
+      });
+
+      if (existingRequest) {
+        return res.status(409).json({ error: 'You already have a pending request for this challenge' });
       }
 
-      // Deduct wager from challenged user when challenge is accepted
+      // Validate wager if provided
+      let finalWager = challenge.Wager;
+      if (wager !== undefined && wager !== null) {
+        const wagerAmount = parseFloat(wager);
+        if (isNaN(wagerAmount) || wagerAmount <= 0) {
+          return res.status(400).json({ error: 'Invalid wager amount' });
+        }
+        // Validate challenged user has sufficient wallet balance
+        if (challengedUser.Wallet < wagerAmount) {
+          return res.status(400).json({
+            error: 'Insufficient Balance. Please credit into your account to increase your wager limit'
+          });
+        }
+        finalWager = wagerAmount;
+      } else {
+        finalWager = parseFloat(challenge.Wager);
+        // Validate challenged user has sufficient wallet balance for default wager
+        if (challengedUser.Wallet < finalWager) {
+          return res.status(400).json({
+            error: 'Insufficient Balance. Please credit into your account to increase your wager limit'
+          });
+        }
+      }
+
+      // Deduct wager from challenged user when they create a request for an open challenge
       // Challenger already paid when creating the challenge
       await prisma.Users.update({
         where: { id: parseInt(userId) },
-        data: { Wallet: { decrement: challenge.Wager } }
+        data: { Wallet: { decrement: finalWager } }
       });
-      
-      // Update challenge: set ChallengedId and change status directly to accepted
-      // This treats it the same as accepting from ChallengeScreen
-      const updatedChallenge = await prisma.Challenges.update({
-        where: { id: parseInt(challengeId) },
-        data: { 
-          ChallengedId: parseInt(userId),
-          Status: 'accepted'
+
+      // Create a new ChallengeRequest instead of updating the challenge
+      // Challenge stays 'open' and ChallengedId remains null
+      // ChallengerId in Challenge_Requests is the person creating the request (Player B)
+      const challengeRequest = await prisma.Challenge_Requests.create({
+        data: {
+          ChallengeId: parseInt(challengeId),
+          ChallengerId: parseInt(userId), // Person creating the request (Player B)
+          Wager: Math.round(finalWager), // Store as dollars (Int)
+          Status: 'request'
         },
         include: {
-          Users_Challenges_ChallengerIdToUsers: {
+          Users: {
             select: {
               id: true,
               Username: true,
@@ -379,27 +711,48 @@ export const acceptChallenge = async (req, res) => {
               PushToken: true
             }
           },
-          Users_Challenges_ChallengedIdToUsers: {
-            select: {
-              id: true,
-              Username: true,
-              Avatar: true,
-              MMI: true,
-              PushToken: true
+          Challenges: {
+            include: {
+              Users_Challenges_ChallengerIdToUsers: {
+                select: {
+                  id: true,
+                  Username: true,
+                  Avatar: true,
+                  MMI: true,
+                  PushToken: true
+                }
+              }
             }
           }
         }
       });
 
-      // Send push notification to challenger (same as regular challenge acceptance)
+      // Update the ChallengeRequests array on the Challenges table to include the new request ID
+      // Get current challenge to access existing ChallengeRequests array
+      const currentChallenge = await prisma.Challenges.findUnique({
+        where: { id: parseInt(challengeId) },
+        select: { ChallengeRequests: true }
+      });
+
+      // Add the new request ID to the ChallengeRequests array
+      const updatedRequestIds = [...(currentChallenge?.ChallengeRequests || []), challengeRequest.id];
+      
+      await prisma.Challenges.update({
+        where: { id: parseInt(challengeId) },
+        data: {
+          ChallengeRequests: updatedRequestIds
+        }
+      });
+
+      // Send push notification to challenger that challenge has been requested
       try {
-        if (updatedChallenge.Users_Challenges_ChallengerIdToUsers.PushToken) {
+        if (challengeRequest.Challenges.Users_Challenges_ChallengerIdToUsers.PushToken) {
           await pushNotificationService.sendChallengeAcceptedNotification(
-            updatedChallenge.Users_Challenges_ChallengerIdToUsers.PushToken,
-            updatedChallenge.Users_Challenges_ChallengedIdToUsers?.Username || 'Your opponent',
+            challengeRequest.Challenges.Users_Challenges_ChallengerIdToUsers.PushToken,
+            challengeRequest.Users?.Username || 'Your opponent',
             {
-              id: updatedChallenge.id,
-              challengedId: updatedChallenge.ChallengedId,
+              id: challengeRequest.Challenges.id,
+              challengedId: challengeRequest.ChallengerId,
             }
           );
         }
@@ -409,9 +762,10 @@ export const acceptChallenge = async (req, res) => {
       }
 
       res.status(200).send({
-        message: 'Challenge accepted successfully',
+        message: 'Challenge requested successfully',
         success: true,
-        challenge: updatedChallenge
+        request: challengeRequest,
+        challenge: challengeRequest.Challenges // Return challenge from the request relation
       });
     } else if (challenge.Status === 'pending') {
       // Regular challenge: verify the user is the challenged player
@@ -419,25 +773,46 @@ export const acceptChallenge = async (req, res) => {
         return res.status(403).json({ error: 'Only the challenged player can accept this challenge' });
       }
 
-      // Validate challenged user has sufficient wallet balance
-      // Challenger already paid when creating the challenge
-      if (challenge.Users_Challenges_ChallengedIdToUsers && challenge.Users_Challenges_ChallengedIdToUsers.Wallet < challenge.Wager) {
-        return res.status(400).json({
-          error: 'Insufficient Balance. Please credit into your account to increase your wager limit'
-        });
-      }
-
-      // Deduct wager from challenged user when challenge is accepted
-      // Challenger already paid when creating the challenge
-      await prisma.Users.update({
+      // Get challenged user info for wallet validation if wager is being updated
+      const challengedUser = await prisma.Users.findUnique({
         where: { id: parseInt(userId) },
-        data: { Wallet: { decrement: challenge.Wager } }
+        select: { Wallet: true }
       });
 
-      // Update challenge status to accepted
+      // Validate wager if provided
+      let finalWager = challenge.Wager;
+      if (wager !== undefined && wager !== null) {
+        const wagerAmount = parseFloat(wager);
+        if (isNaN(wagerAmount) || wagerAmount <= 0) {
+          return res.status(400).json({ error: 'Invalid wager amount' });
+        }
+        // Validate challenged user has sufficient wallet balance
+        if (challengedUser && challengedUser.Wallet < wagerAmount) {
+          return res.status(400).json({
+            error: 'Insufficient Balance. Please credit into your account to increase your wager limit'
+          });
+        }
+        finalWager = wagerAmount;
+      } else {
+        // Validate challenged user has sufficient wallet balance for default wager
+        if (challengedUser && challengedUser.Wallet < challenge.Wager) {
+          return res.status(400).json({
+            error: 'Insufficient Balance. Please credit into your account to increase your wager limit'
+          });
+        }
+      }
+
+      // Note: Wallet deduction does NOT happen for pending challenges
+      // Both users' wallets were already deducted when the challenge was created
+
+      // Update challenge status to accepted, and wager if modified
+      const updateData = { Status: 'accepted' };
+      if (wager !== undefined && wager !== null && parseFloat(wager) !== challenge.Wager) {
+        updateData.Wager = finalWager;
+      }
       const updatedChallenge = await prisma.Challenges.update({
         where: { id: parseInt(challengeId) },
-        data: { Status: 'accepted' },
+        data: updateData,
         include: {
           Users_Challenges_ChallengerIdToUsers: {
             select: {
@@ -493,12 +868,12 @@ export const acceptChallenge = async (req, res) => {
 };
 
 /**
- * Decline a challenge
+ * Get all requests for a specific challenge
  */
-export const declineChallenge = async (req, res) => {
+export const getChallengeRequests = async (req, res) => {
   try {
     const { challengeId } = req.params;
-    const { userId } = req.body;
+    const { status } = req.query;
 
     const challenge = await prisma.Challenges.findUnique({
       where: { id: parseInt(challengeId) }
@@ -508,6 +883,169 @@ export const declineChallenge = async (req, res) => {
       return res.status(404).json({ error: 'Challenge not found' });
     }
 
+    let whereClause = {
+      ChallengeId: parseInt(challengeId)
+    };
+
+    // Filter by status if provided
+    if (status && ['request', 'accepted', 'declined'].includes(status)) {
+      whereClause.Status = status;
+    }
+
+    const requests = await prisma.Challenge_Requests.findMany({
+      where: whereClause,
+      include: {
+        Users: {
+          select: {
+            id: true,
+            Username: true,
+            Avatar: true,
+            MMI: true
+          }
+        }
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
+
+    res.status(200).send({
+      message: 'Challenge requests fetched successfully',
+      success: true,
+      requests
+    });
+
+  } catch (error) {
+    console.error('Error fetching challenge requests:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+/**
+ * Decline a challenge or request
+ */
+export const declineChallenge = async (req, res) => {
+  try {
+    const { challengeId } = req.params;
+    const { userId, requestId } = req.body;
+
+    const challenge = await prisma.Challenges.findUnique({
+      where: { id: parseInt(challengeId) }
+    });
+
+    if (!challenge) {
+      return res.status(404).json({ error: 'Challenge not found' });
+    }
+
+    // If requestId is provided, decline a specific request
+    if (requestId) {
+      const challengeRequest = await prisma.Challenge_Requests.findFirst({
+        where: {
+          id: parseInt(requestId),
+          ChallengeId: parseInt(challengeId),
+          Status: 'request'
+        },
+        include: {
+          Users: {
+            select: {
+              id: true,
+              Username: true,
+              PushToken: true
+            }
+          },
+          Challenges: {
+            include: {
+              Users_Challenges_ChallengerIdToUsers: {
+                select: {
+                  id: true,
+                  Username: true,
+                  PushToken: true
+                }
+              }
+            }
+          }
+        }
+      });
+
+      if (!challengeRequest) {
+        return res.status(404).json({ error: 'Request not found or already processed' });
+      }
+
+      // Check if user is the original challenger (declining someone's request) or the person who created the request (declining own request)
+      // challengeRequest.Challenges.ChallengerId = original challenger (Player A who posted in marketplace)
+      // challengeRequest.ChallengerId = person who created the request (Player B)
+      const isOriginalChallenger = challengeRequest.Challenges.ChallengerId === parseInt(userId);
+      const isRequestCreator = challengeRequest.ChallengerId === parseInt(userId);
+
+      if (!isOriginalChallenger && !isRequestCreator) {
+        return res.status(403).json({ error: 'You do not have permission to decline this request' });
+      }
+
+      // Refund Player B's wager when request is declined
+      // Player B's wallet was deducted when they created the request, so they need a refund
+      // This applies whether Player A declines the request OR Player B declines their own request
+      const requestWager = challengeRequest.Wager;
+      await prisma.Users.update({
+        where: { id: challengeRequest.ChallengerId }, // Player B who created the request
+        data: { Wallet: { increment: requestWager } }
+      });
+
+      // Update request status to declined
+      await prisma.Challenge_Requests.update({
+        where: { id: parseInt(requestId) },
+        data: { Status: 'declined' }
+      });
+
+      // Remove the request ID from the ChallengeRequests array
+      const currentChallenge = await prisma.Challenges.findUnique({
+        where: { id: parseInt(challengeId) },
+        select: { ChallengeRequests: true }
+      });
+
+      if (currentChallenge?.ChallengeRequests) {
+        const updatedRequestIds = currentChallenge.ChallengeRequests.filter(id => id !== parseInt(requestId));
+        await prisma.Challenges.update({
+          where: { id: parseInt(challengeId) },
+          data: {
+            ChallengeRequests: updatedRequestIds
+          }
+        });
+      }
+
+      // Send notification
+      try {
+        if (isOriginalChallenger && challengeRequest.Users?.PushToken) {
+          // Original challenger (Player A) declined the request - notify request creator (Player B)
+          await pushNotificationService.sendChallengeDeclinedNotification(
+            challengeRequest.Users.PushToken,
+            challengeRequest.Challenges.Users_Challenges_ChallengerIdToUsers.Username || 'Your opponent',
+            {
+              id: challengeRequest.Challenges.id,
+              challengerId: challengeRequest.Challenges.ChallengerId,
+            }
+          );
+        } else if (isRequestCreator && challengeRequest.Challenges.Users_Challenges_ChallengerIdToUsers.PushToken) {
+          // Request creator (Player B) declined their own request - notify original challenger (Player A)
+          await pushNotificationService.sendChallengeDeclinedNotification(
+            challengeRequest.Challenges.Users_Challenges_ChallengerIdToUsers.PushToken,
+            challengeRequest.Users?.Username || 'Your opponent',
+            {
+              id: challengeRequest.Challenges.id,
+              challengedId: challengeRequest.ChallengerId,
+            }
+          );
+        }
+      } catch (notificationError) {
+        console.error('Error sending push notification for request decline:', notificationError);
+      }
+
+      return res.status(200).send({
+        message: 'Request declined successfully',
+        success: true
+      });
+    }
+
+    // Regular challenge decline (non-open challenges)
     // Verify the user is the challenged player
     if (challenge.ChallengedId !== parseInt(userId)) {
       return res.status(403).json({ error: 'Only the challenged player can decline this challenge' });
@@ -621,6 +1159,22 @@ export const getChallengeById = async (req, res) => {
             Avatar: true,
             MMI: true
           }
+        },
+        // Include requests if challenge is open
+        Challenge_Requests: {
+          include: {
+            Users: {
+              select: {
+                id: true,
+                Username: true,
+                Avatar: true,
+                MMI: true
+              }
+            }
+          },
+          orderBy: {
+            createdAt: 'desc'
+          }
         }
       }
     });
@@ -662,11 +1216,27 @@ export const cancelChallenge = async (req, res) => {
       return res.status(403).json({ error: 'Only the challenger can cancel this challenge' });
     }
 
-    if (challenge.Status !== 'pending') {
-      return res.status(400).json({ error: 'Challenge is not pending' });
+    // Allow canceling open or pending challenges
+    if (challenge.Status !== 'pending' && challenge.Status !== 'open') {
+      return res.status(400).json({ error: 'Challenge cannot be cancelled in its current state' });
     }
 
-    // Delete the challenge
+    // If it's an open challenge, delete all associated requests first (cascade should handle this, but being explicit)
+    if (challenge.Status === 'open') {
+      await prisma.Challenge_Requests.deleteMany({
+        where: { ChallengeId: parseInt(challengeId) }
+      });
+      
+      // Clear the ChallengeRequests array before deleting
+      await prisma.Challenges.update({
+        where: { id: parseInt(challengeId) },
+        data: {
+          ChallengeRequests: []
+        }
+      });
+    }
+
+    // Delete the challenge (cascade will delete requests)
     await prisma.Challenges.delete({
       where: { id: parseInt(challengeId) }
     });
