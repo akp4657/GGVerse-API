@@ -150,6 +150,8 @@ model Transaction {
   created_at          DateTime       @default(now()) @db.Timestamptz(6)
   PaymentMethodId     Int?
   BankAccountId       Int?
+  Provider            String?        @default("")
+  createdAt           DateTime?      @default(now()) @db.Timestamptz(6)
   BankAccount         BankAccount?   @relation(fields: [BankAccountId], references: [id], onDelete: Cascade)
   PaymentMethod       PaymentMethod? @relation(fields: [PaymentMethodId], references: [id], onDelete: Cascade)
   Users               Users          @relation(fields: [UserId], references: [id], onDelete: Cascade)
@@ -181,6 +183,7 @@ model Users {
   Console                                   Int?                 @default(1)
   PushToken                                 String?
   KYC_Marker                                Boolean              @default(false)
+  ReferredBy                                Int?                 @default(46)
   BankAccount                               BankAccount[]
   Challenge_Requests                        Challenge_Requests[]
   Challenges_Challenges_ChallengedIdToUsers Challenges[]         @relation("Challenges_ChallengedIdToUsers")
@@ -188,6 +191,7 @@ model Users {
   Match_History_Match_History_P1ToUsers     Match_History[]      @relation("Match_History_P1ToUsers")
   Match_History_Match_History_P2ToUsers     Match_History[]      @relation("Match_History_P2ToUsers")
   PaymentMethod                             PaymentMethod[]
+  ReferralCode                              ReferralCode?
   Transaction                               Transaction[]
   Lookup_Console                            Lookup_Console?      @relation(fields: [Console], references: [id], onDelete: NoAction, onUpdate: NoAction)
   Lookup_PaymentType                        Lookup_PaymentType   @relation(fields: [PaymentType], references: [id], onDelete: SetDefault)
@@ -203,4 +207,15 @@ model Challenge_Requests {
   createdAt    DateTime?  @default(now()) @db.Timestamptz(6)
   Challenges   Challenges @relation(fields: [ChallengeId], references: [id], onDelete: Cascade)
   Users        Users?     @relation(fields: [ChallengerId], references: [id], onDelete: Cascade)
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model ReferralCode {
+  id         Int       @id @default(autoincrement())
+  created_at DateTime  @default(now()) @db.Timestamptz(6)
+  Code       String?   @unique @db.VarChar
+  UserId     Int?      @unique
+  expires_at DateTime? @db.Timestamptz(6)
+  Users      Users?    @relation(fields: [UserId], references: [id], onDelete: Cascade)
 }
