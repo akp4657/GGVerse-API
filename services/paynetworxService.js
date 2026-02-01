@@ -141,7 +141,8 @@ export const initiate3DSAuth = async (req, res) => {
         Description: 'Deposit via PayNetWorx 3DS',
         PaynetworxPaymentId: pnx.TransactionID || null,
         Paynetworx3DSId: pnx.threeDSServerTransID || null,
-        Status: 'pending_3ds'
+        Status: 'pending_3ds',
+        Provider: 'paynetworx'
       }
     });
 
@@ -344,7 +345,8 @@ export const processPaymentWithToken = async (req, res) => {
         PaynetworxPaymentId: pnx.TransactionID || null,
         Paynetworx3DSId: pnx.threeDSServerTransID || null,
         PaymentMethodId: parseInt(paymentMethodId),
-        Status: pnx.PaymentResponse?.Response?.Approved || pnx.Approved ? 'completed' : 'failed'
+        Status: pnx.PaymentResponse?.Response?.Approved || pnx.Approved ? 'completed' : 'failed',
+        Provider: 'paynetworx'
       }
     });
 
@@ -375,6 +377,56 @@ function getTomorrowDate() {
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
   return tomorrow.toISOString().split('T')[0];
+}
+
+/**
+ * Tokenize a bank account with PayNetWorx.
+ * PayNetWorx requires a non-zero amount; we use a minimal $0.01 ACH debit with DataAction: 'token/add'
+ * to obtain a token. The $0.01 is a verification charge (processor may not settle it in test).
+ * Returns the TokenID to store in BankAccount.ProviderBankId.
+ * @param {{ routingNumber: string, accountNumber: string, accountType: string, accountHolderName: string, userId: string }} options
+ * @returns {Promise<{ tokenId: string }>}
+ */
+export async function tokenizeBankAccount(options) {
+  const { routingNumber, accountNumber, accountType, accountHolderName, userId } = options;
+  const achData = {
+    ACH: {
+      BankRoutingNumber: routingNumber,
+      AccountNumber: accountNumber,
+      AchAccountType: accountType,
+      CustomerName: accountHolderName,
+      CustomerIdentifier: String(userId),
+      EffectiveDate: getTomorrowDate()
+    }
+  };
+  const request = {
+    Amount: {
+      Total: '0.01',
+      Currency: 'USD'
+    },
+    PaymentMethod: achData,
+    DataAction: 'token/add',
+    TransactionEntry: {
+      Device: 'NA',
+      DeviceVersion: 'NA',
+      Application: 'GGVerse API',
+      ApplicationVersion: '1.0',
+      Timestamp: new Date().toISOString()
+    },
+    Detail: {
+      MerchantData: {
+        MerchantDefinedKey1: `tokenize_bank_${userId}`,
+        MerchantDefinedKey2: userId
+      }
+    }
+  };
+  const pnxResponse = await pnxPaymentRequest('post', '/transaction/achdebit', request);
+  if (pnxResponse.Token?.TokenID) {
+    return { tokenId: pnxResponse.Token.TokenID };
+  }
+  const err = new Error(pnxResponse.ResponseText || pnxResponse.Message || 'Bank account tokenization failed');
+  err.response = { data: pnxResponse };
+  throw err;
 }
 
 // Helper function to get available balance (wallet - escrow)
@@ -569,7 +621,9 @@ export const processWithdrawal = async (req, res) => {
         Amount: withdrawalAmount,
         Currency: currency.toUpperCase(),
         Description: description || 'Withdrawal to bank account',
-        Status: 'pending'
+        Status: 'pending',
+        Provider: 'paynetworx',
+        BankAccountId: bankAccountId ? parseInt(bankAccountId) : null
       }
     });
 
@@ -741,6 +795,278 @@ export const processWithdrawal = async (req, res) => {
       console.error('Response Status:', e.response.status);
       console.error('Response Data:', JSON.stringify(e.response.data, null, 2));
       return res.status(e.response.status || 500).send(e.response.data || { error: 'Withdrawal processing failed' });
+    }
+    return res.status(500).send({ error: e.message });
+  }
+};
+
+// Deposit via ACH Debit - Pull funds from customer's bank account into wallet
+export const processDepositWithBankAccount = async (req, res) => {
+  let transaction = null;
+
+  try {
+    const userId = req.user?.userId || req.user?.id;
+    if (!userId) return res.status(401).send({ error: 'User authentication required' });
+
+    const {
+      amount,
+      currency = 'USD',
+      description,
+      bankAccountId,
+      bankAccount,
+      providerBankToken
+    } = req.body;
+
+    if (!amount || amount <= 0) {
+      return res.status(400).send({ error: 'Valid amount is required' });
+    }
+
+    const user = await prisma.Users.findUnique({
+      where: { id: parseInt(userId) },
+      select: { id: true, Wallet: true, Username: true, Email: true }
+    });
+
+    if (!user) {
+      return res.status(404).send({ error: 'User not found' });
+    }
+
+    const depositAmount = Number(amount);
+
+    // Build ACH payload (same shape as withdrawal - Token+ACH or raw ACH)
+    let achData = null;
+    let bankAccountToken = null;
+
+    if (providerBankToken) {
+      achData = {
+        Token: { TokenID: providerBankToken },
+        ACH: {
+          AchAccountType: req.body.accountType || 'PersonalChecking',
+          CustomerName: req.body.accountHolderName || req.body.customerName || user.Username || 'Test User',
+          EffectiveDate: getTomorrowDate()
+        }
+      };
+    } else if (bankAccountId) {
+      try {
+        bankAccountToken = await prisma.BankAccount.findFirst({
+          where: {
+            id: parseInt(bankAccountId),
+            UserId: parseInt(userId),
+            Active: true
+          }
+        });
+
+        if (!bankAccountToken) {
+          return res.status(404).send({ error: 'Bank account not found or invalid' });
+        }
+
+        if (bankAccountToken.ProviderBankId) {
+          achData = {
+            Token: { TokenID: bankAccountToken.ProviderBankId },
+            ACH: {
+              AchAccountType: bankAccountToken.AccountType,
+              CustomerName: bankAccountToken.AccountName,
+              EffectiveDate: getTomorrowDate()
+            }
+          };
+        } else {
+          if (!bankAccount || !bankAccount.accountNumber) {
+            return res.status(400).send({
+              error: 'Bank account not tokenized. Please provide your full account number.',
+              bankAccountId: parseInt(bankAccountId),
+              requiredFields: ['accountNumber']
+            });
+          }
+          if (!bankAccount.accountNumber || bankAccount.accountNumber.length < 4) {
+            return res.status(400).send({ error: 'Invalid account number. Must be at least 4 digits.' });
+          }
+          const providedLast4 = bankAccount.accountNumber.slice(-4);
+          if (bankAccountToken.AccountLast4 && providedLast4 !== bankAccountToken.AccountLast4) {
+            return res.status(400).send({
+              error: 'Account number does not match saved account.',
+              expectedLast4: bankAccountToken.AccountLast4
+            });
+          }
+          achData = {
+            ACH: {
+              BankRoutingNumber: bankAccountToken.RoutingLast4,
+              AccountNumber: bankAccount.accountNumber,
+              AchAccountType: bankAccountToken.AccountType,
+              CustomerName: bankAccountToken.AccountName,
+              CustomerIdentifier: userId.toString(),
+              EffectiveDate: getTomorrowDate()
+            }
+          };
+        }
+      } catch (error) {
+        return res.status(400).send({
+          error: 'Bank account not available. Please provide bank account details.'
+        });
+      }
+    } else {
+      if (!bankAccount || !bankAccount.routingNumber || !bankAccount.accountNumber ||
+          !bankAccount.accountType || !bankAccount.accountHolderName) {
+        return res.status(400).send({
+          error: 'Bank account information is required',
+          requiredFields: ['routingNumber', 'accountNumber', 'accountType', 'accountHolderName']
+        });
+      }
+      if (!/^\d{9}$/.test(bankAccount.routingNumber)) {
+        return res.status(400).send({ error: 'Invalid routing number. Must be 9 digits.' });
+      }
+      const validAccountTypes = ['PersonalChecking', 'PersonalSavings', 'BusinessChecking', 'BusinessSavings'];
+      if (!validAccountTypes.includes(bankAccount.accountType)) {
+        return res.status(400).send({
+          error: 'Invalid account type',
+          validTypes: validAccountTypes
+        });
+      }
+      achData = {
+        ACH: {
+          BankRoutingNumber: bankAccount.routingNumber,
+          AccountNumber: bankAccount.accountNumber,
+          AchAccountType: bankAccount.accountType,
+          CustomerName: bankAccount.accountHolderName,
+          CustomerIdentifier: userId.toString(),
+          EffectiveDate: getTomorrowDate()
+        }
+      };
+    }
+
+    // Create pending deposit transaction
+    transaction = await prisma.Transaction.create({
+      data: {
+        UserId: parseInt(userId),
+        Type: 'deposit',
+        Amount: depositAmount,
+        Currency: currency.toUpperCase(),
+        Description: description || 'Deposit via ACH',
+        Status: 'pending',
+        Provider: 'paynetworx',
+        BankAccountId: bankAccountId ? parseInt(bankAccountId) : null
+      }
+    });
+
+    const formattedAmount = Number(depositAmount).toFixed(2);
+    const achDebitRequest = {
+      Amount: {
+        Total: formattedAmount,
+        Currency: currency.toUpperCase()
+      },
+      PaymentMethod: achData,
+      TransactionEntry: {
+        Device: 'NA',
+        DeviceVersion: 'NA',
+        Application: 'GGVerse API',
+        ApplicationVersion: '1.0',
+        Timestamp: new Date().toISOString()
+      },
+      Detail: {
+        MerchantData: {
+          MerchantDefinedKey1: `deposit_${transaction.id}`,
+          MerchantDefinedKey2: userId.toString()
+        }
+      }
+    };
+
+    if ((bankAccountId && !bankAccountToken?.ProviderBankId) || (bankAccount && bankAccount.tokenize)) {
+      achDebitRequest.DataAction = 'token/add';
+    }
+
+    const pnxResponse = await pnxPaymentRequest('post', '/transaction/achdebit', achDebitRequest);
+    const approved = pnxResponse.Approved === true;
+
+    if (approved) {
+      await prisma.Users.update({
+        where: { id: parseInt(userId) },
+        data: { Wallet: { increment: depositAmount } }
+      });
+      await prisma.Transaction.update({
+        where: { id: transaction.id },
+        data: {
+          Status: 'completed',
+          PaynetworxPaymentId: pnxResponse.TransactionID
+        }
+      });
+
+      if (pnxResponse.Token?.TokenID) {
+        try {
+          if (bankAccountId) {
+            await prisma.BankAccount.update({
+              where: { id: parseInt(bankAccountId) },
+              data: { ProviderBankId: pnxResponse.Token.TokenID }
+            });
+          } else if (bankAccount) {
+            const existingBankAccount = await prisma.BankAccount.findFirst({
+              where: {
+                UserId: parseInt(userId),
+                AccountLast4: bankAccount.accountNumber.slice(-4),
+                RoutingLast4: bankAccount.routingNumber.slice(-4),
+                AccountType: bankAccount.accountType
+              }
+            });
+            if (existingBankAccount) {
+              await prisma.BankAccount.update({
+                where: { id: existingBankAccount.id },
+                data: { ProviderBankId: pnxResponse.Token.TokenID }
+              });
+            } else {
+              await prisma.BankAccount.create({
+                data: {
+                  UserId: parseInt(userId),
+                  Provider: 'paynetworx',
+                  ProviderBankId: pnxResponse.Token.TokenID,
+                  AccountType: bankAccount.accountType,
+                  AccountName: bankAccount.accountHolderName,
+                  AccountLast4: bankAccount.accountNumber.slice(-4),
+                  RoutingLast4: bankAccount.routingNumber.slice(-4),
+                  Active: true,
+                  IsDefault: false
+                }
+              });
+            }
+          }
+        } catch (err) {
+          console.error('Bank account tokenization skipped:', err.message);
+        }
+      }
+
+      const currentBalance = Number(user.Wallet || 0) + depositAmount;
+      return res.json({
+        success: true,
+        transactionId: transaction.id,
+        amount: depositAmount,
+        currency: currency.toUpperCase(),
+        newBalance: currentBalance,
+        status: 'completed',
+        paynetworxTransactionId: pnxResponse.TransactionID,
+        message: 'Deposit processed successfully'
+      });
+    } else {
+      await prisma.Transaction.update({
+        where: { id: transaction.id },
+        data: { Status: 'failed' }
+      });
+      return res.status(400).send({
+        error: 'Deposit failed',
+        message: pnxResponse.ResponseText || 'ACH debit request was not approved',
+        transactionId: transaction.id
+      });
+    }
+  } catch (e) {
+    if (transaction && transaction.Status === 'pending') {
+      try {
+        await prisma.Transaction.update({
+          where: { id: transaction.id },
+          data: { Status: 'failed' }
+        });
+      } catch (reversalError) {
+        console.error('Error updating transaction:', reversalError);
+      }
+    }
+    if (e.response) {
+      console.error('ACH Debit Response Status:', e.response.status);
+      console.error('ACH Debit Response Data:', JSON.stringify(e.response.data, null, 2));
+      return res.status(e.response.status || 500).send(e.response.data || { error: 'Deposit processing failed' });
     }
     return res.status(500).send({ error: e.message });
   }

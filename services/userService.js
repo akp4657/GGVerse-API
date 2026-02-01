@@ -88,9 +88,20 @@ export const registerUser = async(req, res) => {
     let email = req.body.email;
     let username = req.body.username;
     let password = req.body.password;
+    let referralCode = req.body.referralCode != null ? String(req.body.referralCode).trim() : '';
 
     if (!email || !password)
         return res.status(400).send({ error: 'Email and password are required.' });
+
+    if (!referralCode)
+        return res.status(400).send({ error: 'Referral code is required.' });
+
+    const referrer = await prisma.ReferralCode.findFirst({
+        where: { Code: referralCode },
+        select: { UserId: true }
+    });
+    if (!referrer || referrer.UserId == null)
+        return res.status(400).send({ error: 'Invalid or expired referral code.' });
 
     // Check if user already exists
     let user = await prisma.Users.findUnique({
@@ -120,7 +131,8 @@ export const registerUser = async(req, res) => {
             Password: hashed,
             Wallet: 20,
             Rank: newRank,
-            Authenticated: true
+            Authenticated: true,
+            ReferredBy: referrer.UserId
         };
 
         const newUser = await prisma.Users.create({data: userObj})
@@ -157,6 +169,28 @@ export const registerUser = async(req, res) => {
         return res.status(500).send({message: err.message})
     }
 }
+
+/** Read-only: return the current user's referral code if they have one (codes are created manually, no CRUD). */
+export const getReferralCode = async (req, res) => {
+    try {
+        const userId = req.user?.id ?? req.user?.userId;
+        if (!userId)
+            return res.status(401).send({ error: 'Access token required' });
+
+        const row = await prisma.ReferralCode.findFirst({
+            where: { UserId: parseInt(userId, 10) },
+            select: { Code: true }
+        });
+
+        if (!row || row.Code == null)
+            return res.status(404).send({ error: 'No referral code assigned' });
+
+        return res.status(200).send({ code: row.Code });
+    } catch (err) {
+        console.error('getReferralCode error:', err);
+        return res.status(500).send({ error: 'Failed to get referral code' });
+    }
+};
 
 export const login = async(req, res) => {
     const email = req.body.email;
