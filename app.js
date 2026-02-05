@@ -8,6 +8,7 @@ import * as userService from './services/userService.js';
 import * as walletService from './services/walletService.js';
 import * as matchmakingController from './controllers/matchmakingController.js';
 import * as badgeController from './controllers/badgeController.js';
+import * as rankingController from './controllers/rankingController.js';
 import * as challengeService from './services/challengeService.js';
 import * as discordThreadService from './services/discordThreadService.js';
 import * as discordService from './services/discordService.js';
@@ -165,6 +166,11 @@ app.get('/matchmaking/mmi/:userId/:gameId', matchmakingController.getPlayerMMIFo
 app.get('/matchmaking/rivalries/:userId', matchmakingController.getPlayerRivalries);
 app.get('/matchmaking/stats/:userId', matchmakingController.getMatchmakingStats);
 app.get('/matchmaking/opponents/:userId', matchmakingController.getPotentialOpponents);
+
+// Ranking system endpoints
+app.post('/api/admin/backfill-earnings', geofence, rankingController.backfillEarnings);
+app.post('/api/admin/recalculate-ranks', geofence, rankingController.recalculateAllRanks);
+app.get('/api/ranking/user/:userId', rankingController.getUserRankDetails);
 
 // Badge endpoints
 app.post('/badges', badgeController.createBadge);
