@@ -1,6 +1,7 @@
 import axios from 'axios';
 import ksuid from 'ksuid';
 import prisma from '../prisma/prisma.js';
+import { tokenizeBankAccount } from './paynetworxService.js';
 
 // For tokenization, we need Hosted Payments API URL, not 3DS API URL
 const PAYMENT_API_URL = process.env.PAYNETWORX_HOSTED_PAYMENTS_API_URL?.replace(/\/$/, '') || process.env.PAYNETWORX_PAYMENT_API_URL?.replace(/\/$/, '') || process.env.PAYNETWORX_3DS_API_URL?.replace(/\/$/, '') || '';
@@ -495,7 +496,7 @@ export const saveBankAccount = async (req, res) => {
 
     const {
       routingNumber,
-      accountNumber, // Last 4 digits only when adding
+      accountNumber, // Full account number (4–17 digits); we store only last 4 for display
       accountType,
       accountHolderName
     } = req.body;
@@ -513,10 +514,12 @@ export const saveBankAccount = async (req, res) => {
       return res.status(400).send({ error: 'Invalid routing number. Must be 9 digits.' });
     }
 
-    // Validate account number (should be last 4 digits when adding)
-    if (!/^\d{4}$/.test(accountNumber)) {
-      return res.status(400).send({ error: 'Invalid account number. Please provide the last 4 digits only.' });
+    // Validate account number (full account number: 4–17 digits; we store only last 4 for display)
+    if (!/^\d{4,17}$/.test(accountNumber)) {
+      return res.status(400).send({ error: 'Invalid account number. Must be 4–17 digits.' });
     }
+
+    const accountLast4 = accountNumber.slice(-4);
 
     // Validate account type
     const validAccountTypes = ['PersonalChecking', 'PersonalSavings', 'BusinessChecking', 'BusinessSavings'];
@@ -527,19 +530,36 @@ export const saveBankAccount = async (req, res) => {
       });
     }
 
-    // Save bank account with minimal info:
-    // - Full routing number stored in RoutingLast4 (despite the name, we store full routing number here)
-    // - Last 4 digits of account number stored in AccountLast4
-    // Tokenization will happen automatically on first withdrawal when full account number is provided
+    // Tokenize bank account with PayNetWorx; store token in ProviderBankId
+    let providerBankId = null;
+    try {
+      const { tokenId } = await tokenizeBankAccount({
+        routingNumber,
+        accountNumber,
+        accountType,
+        accountHolderName,
+        userId: String(userId)
+      });
+      providerBankId = tokenId;
+    } catch (tokenizeError) {
+      console.error('Bank account tokenization failed:', tokenizeError);
+      const message = tokenizeError.response?.data?.Message
+        || tokenizeError.response?.data?.ResponseText
+        || tokenizeError.message
+        || 'Bank account could not be verified. Please check your details and try again.';
+      return res.status(400).send({ error: message });
+    }
+
+    // Save bank account with token (ProviderBankId) and last 4 for display
     const bankAccount = await prisma.BankAccount.create({
       data: {
         UserId: parseInt(userId),
         Provider: 'paynetworx',
-        ProviderBankId: null, // Will be set when tokenized during first withdrawal
+        ProviderBankId: providerBankId,
         AccountType: accountType,
         AccountName: accountHolderName,
-        AccountLast4: accountNumber, // Last 4 digits only
-        RoutingLast4: routingNumber, // Full routing number stored here
+        AccountLast4: accountLast4,
+        RoutingLast4: routingNumber,
         Active: true,
         IsDefault: false
       }
@@ -554,11 +574,11 @@ export const saveBankAccount = async (req, res) => {
         accountName: bankAccount.AccountName,
         routingLast4: bankAccount.RoutingLast4,
         isDefault: bankAccount.IsDefault || false,
-        isTokenized: false, // Not tokenized yet - will be tokenized on first withdrawal
+        isTokenized: !!bankAccount.ProviderBankId,
         provider: bankAccount.Provider,
         createdAt: bankAccount.created_at
       },
-      message: 'Bank account saved successfully. It will be tokenized automatically on your first withdrawal.'
+      message: 'Bank account saved and verified successfully.'
     });
   } catch (error) {
     console.error('Error saving bank account:', error);
