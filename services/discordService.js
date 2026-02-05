@@ -1,6 +1,7 @@
 import prisma from '../prisma/prisma.js';
 import jwt from 'jsonwebtoken';
 import * as emailService from './emailService.js';
+import { SimpleRankingService } from './simpleRankingService.js';
 
 // Discord API configuration
 const DISCORD_API_BASE = 'https://discord.com/api/v10';
@@ -572,6 +573,21 @@ export const handleDiscordVerification = async (req, res) => {
       data: { Wallet: { increment: challenge.Wager*2 } }
     });
 
+    // Update Earnings field for lifetime tracking
+    await prisma.Users.update({
+      where: { id: winner.id },
+      data: { Earnings: { increment: challenge.Wager } }
+    });
+
+    // Recalculate ranks for both players
+    try {
+      const rankingService = new SimpleRankingService();
+      await rankingService.updateUserRank(winner.id);
+      await rankingService.updateUserRank(loser.id);
+    } catch (rankError) {
+      console.error('Error updating ranks after match:', rankError);
+      // Don't fail the request if rank update fails
+    }
 
     res.status(200).send({
       success: true,
