@@ -106,6 +106,7 @@ if (!fs.existsSync(uploadsDir)) {
 
 // User profile endpoints
 app.get('/user/profile', userService.authenticateToken, userService.getCurrentUser);
+app.get('/user/referral-code', geofence, userService.authenticateToken, userService.getReferralCode);
 app.put('/user/profile', geofence, userService.authenticateToken, userService.updateUserProfile);
 app.put('/user/password', geofence, userService.authenticateToken, userService.changePassword);
 app.post('/user/push-token', geofence, userService.authenticateToken, userService.storePushToken);
@@ -235,6 +236,9 @@ app.post('/paynetworx/payment', geofence, userService.authenticateToken, paynetw
 
 // Withdrawal endpoint (requires authentication)
 app.post('/paynetworx/withdraw', geofence, userService.authenticateToken, paynetworxService.processWithdrawal);
+
+// ACH Debit deposit endpoint (requires authentication)
+app.post('/paynetworx/deposit', geofence, userService.authenticateToken, paynetworxService.processDepositWithBankAccount);
 
 const server = app.listen(PORT, () => {
   console.log(`Server is running on ${PORT}`);
