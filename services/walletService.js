@@ -254,22 +254,22 @@ export const addFundsCRUD = async (req, res) => {
     const numAmount = Number(amount);
     if (isNaN(numAmount) || numAmount <= 0) return res.status(400).send({ error: 'Valid amount is required' });
 
-    await prisma.Users.update({
-      where: { id: parseInt(userId) },
-      data: { Wallet: Number(user.Wallet) + numAmount }
-    });
-
-    await prisma.Transaction.create({
-      data: {
-        UserId: parseInt(userId),
-        Type: 'deposit',
-        Amount: numAmount,
-        Currency: 'USD',
-        Description: provider === 'venmo' ? 'Deposit via Venmo' : 'Deposit via CashApp',
-        Status: 'completed',
-        Provider: provider
-      }
-    });
+    // Deposits disabled on API: do not add to wallet or create transaction
+    // await prisma.Users.update({
+    //   where: { id: parseInt(userId) },
+    //   data: { Wallet: Number(user.Wallet) + numAmount }
+    // });
+    // await prisma.Transaction.create({
+    //   data: {
+    //     UserId: parseInt(userId),
+    //     Type: 'deposit',
+    //     Amount: numAmount,
+    //     Currency: 'USD',
+    //     Description: provider === 'venmo' ? 'Deposit via Venmo' : 'Deposit via CashApp',
+    //     Status: 'completed',
+    //     Provider: provider
+    //   }
+    // });
 
     res.status(200).send({ message: 'Funds added successfully' });
   } catch (err) {
