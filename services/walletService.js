@@ -213,22 +213,22 @@ export const withdrawFundsCRUD = async (req, res) => {
     if (isNaN(numAmount) || numAmount <= 0) return res.status(400).send({ error: 'Valid amount is required' });
     if (wallet < numAmount) return res.status(400).send({ error: 'Insufficient funds' });
 
-    await prisma.Users.update({
-      where: { id: parseInt(userId) },
-      data: { Wallet: wallet - numAmount }
-    });
-
-    await prisma.Transaction.create({
-      data: {
-        UserId: parseInt(userId),
-        Type: 'withdrawal',
-        Amount: numAmount,
-        Currency: 'USD',
-        Description: provider === 'venmo' ? 'Withdrawal via Venmo' : 'Withdrawal via CashApp',
-        Status: 'completed',
-        Provider: provider
-      }
-    });
+    // Withdrawals disabled on API: do not deduct wallet or create transaction
+    // await prisma.Users.update({
+    //   where: { id: parseInt(userId) },
+    //   data: { Wallet: wallet - numAmount }
+    // });
+    // await prisma.Transaction.create({
+    //   data: {
+    //     UserId: parseInt(userId),
+    //     Type: 'withdrawal',
+    //     Amount: numAmount,
+    //     Currency: 'USD',
+    //     Description: provider === 'venmo' ? 'Withdrawal via Venmo' : 'Withdrawal via CashApp',
+    //     Status: 'completed',
+    //     Provider: provider
+    //   }
+    // });
 
     res.status(200).send({ message: 'Funds withdrawn successfully' });
   } catch (err) {
