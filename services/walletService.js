@@ -213,24 +213,37 @@ export const withdrawFundsCRUD = async (req, res) => {
     if (isNaN(numAmount) || numAmount <= 0) return res.status(400).send({ error: 'Valid amount is required' });
     if (wallet < numAmount) return res.status(400).send({ error: 'Insufficient funds' });
 
-    await prisma.Users.update({
-      where: { id: parseInt(userId) },
-      data: { Wallet: wallet - numAmount }
-    });
+    // Calculate processing time (24 hours, or 5 minutes for testing)
+    const processingMinutes = process.env.VENMO_CASHAPP_PROCESSING_MINUTES 
+      ? parseInt(process.env.VENMO_CASHAPP_PROCESSING_MINUTES) 
+      : 5; // Default to 5 minutes for testing
+    const processingMs = processingMinutes * 60 * 1000;
+    const processingHours = processingMinutes / 60;
+    
+    // Calculate processAt time (processing period from now)
+    const processAt = new Date(Date.now() + processingMs);
 
-    await prisma.Transaction.create({
+    // For withdrawals, DON'T update balance immediately - it will be updated after processing time
+    // Create transaction with 'pending' status
+    const transaction = await prisma.Transaction.create({
       data: {
         UserId: parseInt(userId),
         Type: 'withdrawal',
         Amount: numAmount,
         Currency: 'USD',
         Description: provider === 'venmo' ? 'Withdrawal via Venmo' : 'Withdrawal via CashApp',
-        Status: 'completed',
-        Provider: provider
+        Status: 'pending',
+        Provider: provider,
+        processAt: processAt
       }
     });
 
-    res.status(200).send({ message: 'Funds withdrawn successfully' });
+    res.status(200).send({ 
+      message: 'Withdrawal request submitted successfully. Funds will be deducted from your wallet after the processing period.',
+      transactionId: transaction.id,
+      processAt: processAt.toISOString(),
+      processingDuration: `${processingHours} hour${processingHours !== 1 ? 's' : ''}`
+    });
   } catch (err) {
     console.error('Error withdrawing funds:', err);
     res.status(500).send({ error: 'Failed to withdraw funds' });
@@ -254,24 +267,37 @@ export const addFundsCRUD = async (req, res) => {
     const numAmount = Number(amount);
     if (isNaN(numAmount) || numAmount <= 0) return res.status(400).send({ error: 'Valid amount is required' });
 
-    await prisma.Users.update({
-      where: { id: parseInt(userId) },
-      data: { Wallet: Number(user.Wallet) + numAmount }
-    });
+    // Calculate processing time (24 hours, or 5 minutes for testing)
+    const processingMinutes = process.env.VENMO_CASHAPP_PROCESSING_MINUTES 
+      ? parseInt(process.env.VENMO_CASHAPP_PROCESSING_MINUTES) 
+      : 5; // Default to 5 minutes for testing
+    const processingMs = processingMinutes * 60 * 1000;
+    const processingHours = processingMinutes / 60;
+    
+    // Calculate processAt time (processing period from now)
+    const processAt = new Date(Date.now() + processingMs);
 
-    await prisma.Transaction.create({
+    // For deposits, DON'T update balance immediately - it will be updated after processing time
+    // Create transaction with 'pending' status
+    const transaction = await prisma.Transaction.create({
       data: {
         UserId: parseInt(userId),
         Type: 'deposit',
         Amount: numAmount,
         Currency: 'USD',
         Description: provider === 'venmo' ? 'Deposit via Venmo' : 'Deposit via CashApp',
-        Status: 'completed',
-        Provider: provider
+        Status: 'pending',
+        Provider: provider,
+        processAt: processAt
       }
     });
 
-    res.status(200).send({ message: 'Funds added successfully' });
+    res.status(200).send({ 
+      message: 'Deposit request submitted successfully. Funds will be added to your wallet after the processing period.',
+      transactionId: transaction.id,
+      processAt: processAt.toISOString(),
+      processingDuration: `${processingHours} hour${processingHours !== 1 ? 's' : ''}`
+    });
   } catch (err) {
     console.error('Error adding funds:', err);
     res.status(500).send({ error: 'Failed to add funds' });

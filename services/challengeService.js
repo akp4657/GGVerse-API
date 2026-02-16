@@ -1201,10 +1201,17 @@ export const getChallengeById = async (req, res) => {
 export const cancelChallenge = async (req, res) => {
   try {
     const { challengeId } = req.params;
-    const { userId } = req.body;
+    const userId = req.user?.id || req.body?.userId; // Get from token or fallback to body
 
     const challenge = await prisma.Challenges.findUnique({
-      where: { id: parseInt(challengeId) }
+      where: { id: parseInt(challengeId) },
+      include: {
+        Challenge_Requests: {
+          where: {
+            Status: { in: ['request', 'pending'] } // Only refund active requests
+          }
+        }
+      }
     });
 
     if (!challenge) {
@@ -1221,28 +1228,44 @@ export const cancelChallenge = async (req, res) => {
       return res.status(400).json({ error: 'Challenge cannot be cancelled in its current state' });
     }
 
-    // If it's an open challenge, delete all associated requests first (cascade should handle this, but being explicit)
-    if (challenge.Status === 'open') {
-      await prisma.Challenge_Requests.deleteMany({
-        where: { ChallengeId: parseInt(challengeId) }
-      });
-      
-      // Clear the ChallengeRequests array before deleting
-      await prisma.Challenges.update({
-        where: { id: parseInt(challengeId) },
-        data: {
-          ChallengeRequests: []
+    // Refund challenger's wager
+    await prisma.Users.update({
+      where: { id: challenge.ChallengerId },
+      data: { Wallet: { increment: challenge.Wager } }
+    });
+
+    // If it's an open challenge, refund all pending requests and mark them as cancelled
+    if (challenge.Status === 'open' && challenge.Challenge_Requests && challenge.Challenge_Requests.length > 0) {
+      // Refund each request creator's wager
+      for (const request of challenge.Challenge_Requests) {
+        if (request.Status === 'request' || request.Status === 'pending') {
+          // Refund the request creator's wager
+          await prisma.Users.update({
+            where: { id: request.ChallengerId },
+            data: { Wallet: { increment: request.Wager } }
+          });
+
+          // Mark request as cancelled/declined
+          await prisma.Challenge_Requests.update({
+            where: { id: request.id },
+            data: { Status: 'declined' }
+          });
         }
-      });
+      }
     }
 
-    // Delete the challenge (cascade will delete requests)
+    // Delete all associated requests
+    await prisma.Challenge_Requests.deleteMany({
+      where: { ChallengeId: parseInt(challengeId) }
+    });
+
+    // Delete the challenge
     await prisma.Challenges.delete({
       where: { id: parseInt(challengeId) }
     });
 
     res.status(200).send({
-      message: 'Challenge cancelled successfully',
+      message: 'Challenge cancelled successfully. Wager refunded and all requests cancelled.',
       success: true
     });
 

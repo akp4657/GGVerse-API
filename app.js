@@ -14,6 +14,7 @@ import * as discordService from './services/discordService.js';
 import * as paynetworxService from './services/paynetworxService.js';
 import * as paymentMethodService from './services/paymentMethodService.js';
 import * as cloudinaryService from './services/cloudinaryService.js';
+import * as transactionProcessorService from './services/transactionProcessorService.js';
 import { extractClientIP } from './middleware/ipExtractor.js';
 import { geofence } from './middleware/geofence.js';
 import multer from 'multer';
@@ -182,7 +183,7 @@ app.get('/challenges/:challengeId', geofence, challengeService.getChallengeById)
 app.get('/challenges/:challengeId/requests', geofence, challengeService.getChallengeRequests);
 app.post('/challenges/:challengeId/accept', geofence, challengeService.acceptChallenge);
 app.post('/challenges/:challengeId/decline', geofence, challengeService.declineChallenge);
-app.delete('/challenges/:challengeId', geofence, challengeService.cancelChallenge);
+app.delete('/challenges/:challengeId', geofence, userService.authenticateToken, challengeService.cancelChallenge);
 
 // Discord thread endpoints
 app.post('/api/ggthread', discordThreadService.createDiscordThread);
@@ -242,6 +243,9 @@ app.post('/paynetworx/deposit', geofence, userService.authenticateToken, paynetw
 
 const server = app.listen(PORT, () => {
   console.log(`Server is running on ${PORT}`);
+  
+  // Start the transaction processor for Venmo/CashApp transactions
+  transactionProcessorService.startTransactionProcessor();
 });
 
 server.on('error', (error) => {
