@@ -90,6 +90,7 @@ export const registerUser = async(req, res) => {
     let username = req.body.username;
     let password = req.body.password;
     let referralCode = req.body.referralCode != null ? String(req.body.referralCode).trim() : '';
+    const clientIP = req.clientIP;
 
     if (!email || !password)
         return res.status(400).send({ error: 'Email and password are required.' });
@@ -112,6 +113,16 @@ export const registerUser = async(req, res) => {
         return res.status(400).send({error: 'User already exists'})
     }
 
+    // Check if IP already exists (prevent duplicate accounts from same IP)
+    if (clientIP) {
+        const existingUserWithIP = await prisma.Users.findFirst({
+            where: { ip: clientIP }
+        });
+        if (existingUserWithIP) {
+            return res.status(400).send({ error: 'An account with this IP address already exists.' });
+        }
+    }
+
     try {
         const hashed = await bcrypt.hash(password, 12);
 
@@ -124,7 +135,8 @@ export const registerUser = async(req, res) => {
             RankScore: 0,   // Performance score (0-1000)
             Earnings: 0,    // Initialize lifetime earnings
             Authenticated: true,
-            ReferredBy: referrer.UserId
+            ReferredBy: referrer.UserId,
+            ip: clientIP || null
         };
 
         const newUser = await prisma.Users.create({data: userObj})
@@ -193,9 +205,20 @@ export const getReferralCode = async (req, res) => {
     }
 };
 
+export const decodePassword = async(req, res) => {
+    const password = req.body.password;
+    try {
+        const decoded = jwt.verify(password, process.env.JWT_SECRET);
+        return res.status(200).send({ decoded });
+    } catch(err) {
+        return res.status(400).send({message: 'Invalid password'});
+    }
+}
+
 export const login = async(req, res) => {
     const email = req.body.email;
     const password = req.body.password;
+    const clientIP = req.clientIP;
 
     if(!email || !password) {
         return res.status(400).send({message: 'Email and password are required'});
@@ -224,13 +247,24 @@ export const login = async(req, res) => {
         const token = jwt.sign(
             { id: user.id, email: user.Email },
             process.env.JWT_SECRET,
-            { expiresIn: process.env.JWT_EXPIRES_IN || '1h' }
+            { expiresIn: process.env.JWT_EXPIRES_IN || '12h' }
         );
 
-        // Store JWT in database
+        // Prepare update data - only update IP if it's null/empty (set once on first login)
+        const updateData = {
+            JWT: token,
+            Online: true
+        };
+        
+        // Only set IP if it doesn't exist yet (first login only)
+        if (clientIP && (!user.ip || user.ip === null || user.ip === '')) {
+            updateData.ip = clientIP;
+        }
+
+        // Store JWT in database and update IP if needed
         await prisma.Users.update({
             where: { id: user.id },
-            data: { JWT: token, Online: true }
+            data: updateData
         });
 
         return res.status(200).send({ 
@@ -580,8 +614,23 @@ export const changePassword = async (req, res) => {
 
     const { currentPassword, newPassword } = req.body;
 
-    if (newPassword.length < 6) {
+    // Validate required fields
+    if (!currentPassword) {
+      return res.status(400).send({ message: 'Current password is required' });
+    }
+
+    if (!newPassword) {
+      return res.status(400).send({ message: 'New password is required' });
+    }
+
+    // Validate password length
+    if (typeof newPassword !== 'string' || newPassword.length < 6) {
       return res.status(400).send({ message: 'New password must be at least 6 characters long' });
+    }
+
+    // Validate password is not too long (prevent DoS)
+    if (newPassword.length > 128) {
+      return res.status(400).send({ message: 'New password must be less than 128 characters' });
     }
 
     // Get user from database with password

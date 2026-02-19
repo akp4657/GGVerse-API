@@ -152,6 +152,7 @@ model Transaction {
   BankAccountId       Int?
   Provider            String?        @default("")
   createdAt           DateTime?      @default(now()) @db.Timestamptz(6)
+  processAt           DateTime?      @db.Timestamptz(6)
   BankAccount         BankAccount?   @relation(fields: [BankAccountId], references: [id], onDelete: Cascade)
   PaymentMethod       PaymentMethod? @relation(fields: [PaymentMethodId], references: [id], onDelete: Cascade)
   Users               Users          @relation(fields: [UserId], references: [id], onDelete: Cascade)
@@ -185,6 +186,9 @@ model Users {
   PushToken                                 String?
   KYC_Marker                                Boolean              @default(false)
   ReferredBy                                Int?                 @default(46)
+  createdAt                                 DateTime?            @default(now()) @db.Timestamptz(6)
+  RankScore                                 Int?                 @default(0)
+  ip                                        String?
   BankAccount                               BankAccount[]
   Challenge_Requests                        Challenge_Requests[]
   Challenges_Challenges_ChallengedIdToUsers Challenges[]         @relation("Challenges_ChallengedIdToUsers")
