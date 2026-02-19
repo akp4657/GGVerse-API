@@ -359,7 +359,8 @@ export const getCurrentUser = async (req, res) => {
 
 export const getUsers = async (req, res) => {
   try {
-    // Only return id, online, active, and winnings
+    const period = req.query.period; // 'month' or undefined (all-time)
+
     const users = await prisma.Users.findMany({
       select: {
         id: true,
@@ -378,7 +379,142 @@ export const getUsers = async (req, res) => {
       }
     });
 
-    res.status(200).send(users);
+    const userIds = users.map(u => u.id);
+
+    // For monthly period, compute current month date range
+    let dateFilter = {};
+    if (period === 'month') {
+      const now = new Date();
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+      dateFilter = { created_at: { gte: monthStart, lt: monthEnd } };
+    }
+
+    // Batch queries: wins and total matches per user (with optional date filter)
+    const batchQueries = [
+      prisma.Match_History.groupBy({
+        by: ['P1'],
+        where: { P1: { in: userIds }, Result: true, Status: 2, ...dateFilter },
+        _count: { id: true }
+      }),
+      prisma.Match_History.groupBy({
+        by: ['P2'],
+        where: { P2: { in: userIds }, Result: false, Status: 2, ...dateFilter },
+        _count: { id: true }
+      }),
+      prisma.Match_History.groupBy({
+        by: ['P1'],
+        where: { P1: { in: userIds }, Status: 2, ...dateFilter },
+        _count: { id: true }
+      }),
+      prisma.Match_History.groupBy({
+        by: ['P2'],
+        where: { P2: { in: userIds }, Status: 2, ...dateFilter },
+        _count: { id: true }
+      }),
+    ];
+
+    // For monthly period, also sum earnings from wins
+    if (period === 'month') {
+      batchQueries.push(
+        prisma.Match_History.groupBy({
+          by: ['P1'],
+          where: { P1: { in: userIds }, Result: true, Status: 2, ...dateFilter },
+          _sum: { BetAmount: true }
+        }),
+        prisma.Match_History.groupBy({
+          by: ['P2'],
+          where: { P2: { in: userIds }, Result: false, Status: 2, ...dateFilter },
+          _sum: { BetAmount: true }
+        })
+      );
+    }
+
+    const results = await Promise.all(batchQueries);
+    const [winsAsP1, winsAsP2, matchesAsP1, matchesAsP2] = results;
+    const earningsAsP1 = results[4] ?? [];
+    const earningsAsP2 = results[5] ?? [];
+
+    // Build stats map: userId -> { wins, totalMatches, earnings }
+    const statsMap = {};
+    for (const u of users) {
+      statsMap[u.id] = { wins: 0, totalMatches: 0, earnings: 0 };
+    }
+    for (const row of winsAsP1) {
+      if (row.P1 !== null && statsMap[row.P1] !== undefined) {
+        statsMap[row.P1].wins += row._count.id;
+      }
+    }
+    for (const row of winsAsP2) {
+      if (row.P2 !== null && statsMap[row.P2] !== undefined) {
+        statsMap[row.P2].wins += row._count.id;
+      }
+    }
+    for (const row of matchesAsP1) {
+      if (row.P1 !== null && statsMap[row.P1] !== undefined) {
+        statsMap[row.P1].totalMatches += row._count.id;
+      }
+    }
+    for (const row of matchesAsP2) {
+      if (row.P2 !== null && statsMap[row.P2] !== undefined) {
+        statsMap[row.P2].totalMatches += row._count.id;
+      }
+    }
+
+    let usersWithStats;
+
+    if (period === 'month') {
+      // Accumulate monthly earnings
+      for (const row of earningsAsP1) {
+        if (row.P1 !== null && statsMap[row.P1] !== undefined) {
+          statsMap[row.P1].earnings += Number(row._sum.BetAmount) || 0;
+        }
+      }
+      for (const row of earningsAsP2) {
+        if (row.P2 !== null && statsMap[row.P2] !== undefined) {
+          statsMap[row.P2].earnings += Number(row._sum.BetAmount) || 0;
+        }
+      }
+
+      // Attach monthly stats
+      usersWithStats = users.map(u => ({
+        ...u,
+        wins: statsMap[u.id].wins,
+        totalMatches: statsMap[u.id].totalMatches,
+        Earnings: statsMap[u.id].earnings,
+      }));
+
+      // Compute monthly rank using same weighted formula as all-time ranking.
+      // Normalize each metric relative to the top performer this month.
+      const maxMatches = Math.max(...usersWithStats.map(u => u.totalMatches), 1);
+      const maxWins    = Math.max(...usersWithStats.map(u => u.wins), 1);
+      const maxEarnings = Math.max(...usersWithStats.map(u => u.Earnings), 1);
+
+      usersWithStats = usersWithStats.map(u => ({
+        ...u,
+        _monthlyScore: (
+          (u.totalMatches / maxMatches) * 0.50 +
+          (u.wins        / maxWins)     * 0.30 +
+          (u.Earnings    / maxEarnings) * 0.20
+        ) * 1000,
+      }));
+
+      // Sort by score DESC, tiebreak by id ASC, assign monthly rank positions
+      usersWithStats.sort((a, b) => b._monthlyScore - a._monthlyScore || a.id - b.id);
+      usersWithStats = usersWithStats.map((u, idx) => {
+        const { _monthlyScore, ...rest } = u;
+        return { ...rest, Rank: idx + 1 };
+      });
+    } else {
+      // All-time: use stored Rank and Earnings from Users table
+      usersWithStats = users.map(u => ({
+        ...u,
+        wins: statsMap[u.id].wins,
+        totalMatches: statsMap[u.id].totalMatches,
+      }));
+    }
+
+    res.status(200).send(usersWithStats);
   } catch (err) {
     console.error('Error fetching users:', err);
     res.status(500).send({ message: 'Failed to fetch users' });
