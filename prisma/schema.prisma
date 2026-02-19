@@ -161,7 +161,8 @@ model Transaction {
 model Users {
   id                                        Int                  @id(map: "Test-User-Table_pkey") @default(autoincrement())
   Username                                  String?
-  Rank                                      Int                  @unique
+  Rank                                      Int                  @unique @default(0)
+  RankScore                                 Int                  @default(0)
   Wallet                                    Int                  @default(0)
   PaymentType                               Int                  @default(1)
   Rivals                                    Int[]

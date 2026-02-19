@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import * as emailService from '../services/emailService.js';
 import * as cloudinaryService from '../services/cloudinaryService.js';
 import prisma from '../prisma/prisma.js';
+import { SimpleRankingService } from './simpleRankingService.js';
 
 // Token blacklist (in production, use Redis or database)
 const tokenBlacklist = new Set();
@@ -125,29 +126,29 @@ export const registerUser = async(req, res) => {
     try {
         const hashed = await bcrypt.hash(password, 12);
 
-        let nextMaxRank = await prisma.Users.findFirst({
-            orderBy: {
-                Rank: 'desc'
-            },
-            select: {
-                Rank: true
-            }
-        })
-
-        const newRank = nextMaxRank ? nextMaxRank.Rank + 1 : 1;
-
         const userObj = {
             Username: username || email,
             Email: email,
             Password: hashed,
             Wallet: 20,
-            Rank: newRank,
+            Rank: 0,        // Will be assigned position after rank calculation
+            RankScore: 0,   // Performance score (0-1000)
+            Earnings: 0,    // Initialize lifetime earnings
             Authenticated: true,
             ReferredBy: referrer.UserId,
             ip: clientIP || null
         };
 
         const newUser = await prisma.Users.create({data: userObj})
+
+        // Calculate initial rank (will be 0 for new user with no matches)
+        try {
+            const rankingService = new SimpleRankingService();
+            await rankingService.updateUserRank(newUser.id);
+        } catch (rankError) {
+            console.error('Error updating rank for new user:', rankError);
+            // Don't fail registration if rank update fails
+        }
 
         const token = jwt.sign({ id: newUser.id, email }, process.env.JWT_SECRET, {
             expiresIn: process.env.JWT_EXPIRES_IN,
